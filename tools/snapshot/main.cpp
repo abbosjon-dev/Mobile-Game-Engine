@@ -70,19 +70,57 @@ bool writePng(const char* path, uint32_t w, uint32_t h, const std::vector<uint8_
     return true;
 }
 
+
+// Editor'dagi standart sahna bilan bir xil (EditorState.kt)
+void buildDemoScene(zamin::Scene& scene) {
+    using zamin::EntityDesc;
+    using zamin::MeshKind;
+    auto add = [&](uint32_t id, uint32_t parent, MeshKind mesh, zamin::Vec3 pos, zamin::Vec3 rot,
+                   zamin::Vec3 scale, uint32_t rgb) {
+        EntityDesc e;
+        e.id = id;
+        e.parent = parent;
+        e.mesh = mesh;
+        e.position = pos;
+        e.rotation = rot;
+        e.scale = scale;
+        e.color[0] = ((rgb >> 16) & 0xFF) / 255.0f;
+        e.color[1] = ((rgb >> 8) & 0xFF) / 255.0f;
+        e.color[2] = (rgb & 0xFF) / 255.0f;
+        scene.upsert(e);
+    };
+    add(1, 0, MeshKind::None, {}, {}, {1, 1, 1}, 0xFFFFFF);
+    add(2, 1, MeshKind::None, {0, 1.6f, -6}, {}, {1, 1, 1}, 0xFFFFFF);
+    add(3, 1, MeshKind::None, {0, 8, 0}, {50, -30, 0}, {1, 1, 1}, 0xFFFFFF);
+    add(4, 1, MeshKind::Pyramid, {0, 0.5f, 0}, {}, {1, 1, 1}, 0x3DB98A);
+    add(5, 1, MeshKind::Cube, {-1.8f, 0.5f, 0.8f}, {0, 25, 0}, {1, 1, 1}, 0xF2A33C);
+    add(6, 1, MeshKind::Sphere, {1.7f, 0.5f, -0.6f}, {}, {1, 1, 1}, 0x4D8CF2);
+    add(7, 1, MeshKind::Plane, {0, 0, 0}, {}, {10, 1, 10}, 0x3F4A45);
+    add(8, 1, MeshKind::None, {1.2f, 0, 2}, {}, {1, 1, 1}, 0xFFFFFF);
+    add(9, 8, MeshKind::Quad, {0, 0.75f, 0}, {}, {1, 1.5f, 1}, 0xE8604C);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc < 4) {
-        std::fprintf(stderr, "Ishlatish: %s <out.png> <width> <height> [rotY] [rotX]\n", argv[0]);
+        std::fprintf(stderr,
+                     "Ishlatish: %s <out.png> <width> <height> [yaw] [pitch] [tanlangan_id] [2d]\n",
+                     argv[0]);
         return 2;
     }
     const uint32_t w = std::atoi(argv[2]);
     const uint32_t h = std::atoi(argv[3]);
     zamin::rhi::FrameParams params;
-    params.rotationY = argc > 4 ? std::atof(argv[4]) : 0.6f;
-    params.rotationX = argc > 5 ? std::atof(argv[5]) : 0.35f;
+    params.camera.yaw = argc > 4 ? std::atof(argv[4]) : 0.6f;
+    params.camera.pitch = argc > 5 ? std::atof(argv[5]) : 0.42f;
+    const uint32_t selected = argc > 6 ? std::atoi(argv[6]) : 4;
+    params.camera.mode2D = argc > 7 && std::atoi(argv[7]) != 0;
+    if (params.camera.mode2D) params.camera.target = {0.0f, 0.5f, 0.0f};
 
+    zamin::Scene scene;
+    buildDemoScene(scene);
+    scene.buildDrawList(params.items, selected);
     auto renderer = zamin::rhi::createVulkanRenderer();
     std::vector<uint8_t> pixels;
     if (!renderer->renderOffscreen(w, h, params, pixels)) {

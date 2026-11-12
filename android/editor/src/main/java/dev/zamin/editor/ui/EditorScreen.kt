@@ -62,6 +62,8 @@ fun EditorScreen(
     var stats by remember { mutableStateOf(EngineStats()) }
     var gpuName by remember { mutableStateOf("") }
 
+    EngineSceneSync(state, engine)
+
     LaunchedEffect(engine) {
         while (true) {
             stats = engine.stats()

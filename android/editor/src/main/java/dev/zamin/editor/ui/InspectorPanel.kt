@@ -25,11 +25,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.CenterFocusStrong
 import androidx.compose.material.icons.outlined.OpenWith
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.ViewInAr
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,43 +64,34 @@ fun InspectorPanel(state: EditorState, modifier: Modifier = Modifier) {
             return@Column
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            ObjectHeader(obj)
+            ObjectHeader(obj, onFocus = { state.requestFocus() })
             ComponentSection("Transform", Icons.Outlined.OpenWith) {
                 Vec3Row("Joylashuv", obj.position) { obj.position = it }
                 Vec3Row("Aylanish", obj.rotation) { obj.rotation = it }
                 Vec3Row("Masshtab", obj.scale) { obj.scale = it }
             }
             when (obj.type) {
-                ObjectType.Mesh -> {
-                    ComponentSection("Mesh Renderer", Icons.Outlined.ViewInAr) {
-                        PropertyRow("Mesh") { AssetField(if (obj.name == "Yer") "Tekislik" else "Piramida", Icons.Outlined.ViewInAr) }
-                        PropertyRow("Material") { AssetField(if (obj.name == "Yer") "Maysa.mat" else "Standart.mat", Icons.Outlined.Palette) }
-                        PropertyRow("Soya tashlash") { Toggle(true) }
+                ObjectType.Mesh -> ComponentSection("Mesh Renderer", Icons.Outlined.ViewInAr) {
+                    PropertyRow("Mesh") {
+                        Dropdown(obj.mesh.label, Icons.Outlined.ViewInAr,
+                            listOf(MeshKind.Cube, MeshKind.Sphere, MeshKind.Pyramid, MeshKind.Plane).map { it.label to it },
+                        ) { obj.mesh = it }
                     }
+                    ColorProperty("Rang", obj.color) { obj.color = it }
+                }
+                ObjectType.Sprite -> ComponentSection("Sprite Renderer", Icons.Outlined.Palette) {
+                    PropertyRow("Sprite") { AssetField("Yo'q (rang)", Icons.Outlined.Palette) }
+                    ColorProperty("Rang", obj.color) { obj.color = it }
                 }
                 ObjectType.Light -> ComponentSection("Yorug'lik", Icons.Outlined.Tune) {
                     PropertyRow("Turi") { AssetField("Yo'naltirilgan", null) }
-                    PropertyRow("Rang") { ColorSwatch(Color(0xFFFFF1D6)) }
-                    PropertyRow("Kuch") { NumberField(1.2f, null) {} }
-                    PropertyRow("Soyalar") { Toggle(true) }
+                    Hint("Yorug'lik sozlamalari keyingi bosqichda engine'ga ulanadi")
                 }
                 ObjectType.Camera -> ComponentSection("Kamera", Icons.Outlined.Tune) {
                     PropertyRow("Proyeksiya") { AssetField("Perspektiv", null) }
-                    PropertyRow("Ko'rish burchagi") { NumberField(60f, null) {} }
-                    PropertyRow("Fon rangi") { ColorSwatch(Color(0xFF22252B)) }
-                }
-                ObjectType.Sprite -> ComponentSection("Sprite Renderer", Icons.Outlined.Palette) {
-                    PropertyRow("Sprite") { AssetField("Qahramon.png", Icons.Outlined.Palette) }
-                    PropertyRow("Rang") { ColorSwatch(Color.White) }
-                    PropertyRow("Teskari X") { Toggle(false) }
+                    Hint("O'yin kamerasi Play rejimi bilan birga ishlaydi")
                 }
                 else -> {}
-            }
-            if (obj.type == ObjectType.Empty || obj.name == "Piramida") {
-                ComponentSection("Skript", Icons.Outlined.Code) {
-                    PropertyRow("Fayl") { AssetField("Oyinchi.luau", Icons.Outlined.Code) }
-                    PropertyRow("Tezlik") { NumberField(5f, null) {} }
-                }
             }
             AddComponentButton()
             Spacer(Modifier.height(24.dp))
@@ -107,7 +100,7 @@ fun InspectorPanel(state: EditorState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ObjectHeader(obj: SceneObject) {
+private fun ObjectHeader(obj: SceneObject, onFocus: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -125,7 +118,11 @@ private fun ObjectHeader(obj: SceneObject) {
             )
             Text(obj.type.label, color = ZaminColors.TextFaint, fontSize = 11.sp)
         }
-        Toggle(obj.visible) { obj.visible = it }
+        if (obj.type != ObjectType.Scene) {
+            ToolIconButton(Icons.Outlined.CenterFocusStrong, "Kamerani qaratish", size = 32.dp, onClick = onFocus)
+            Spacer(Modifier.width(6.dp))
+            Toggle(obj.visible) { obj.visible = it }
+        }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(ZaminColors.Divider))
 }
@@ -205,10 +202,57 @@ private fun NumberField(value: Float, axis: Color?, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun AssetField(name: String, icon: ImageVector?) {
+private fun Hint(text: String) {
+    Text(text, color = ZaminColors.TextFaint, fontSize = 11.sp, modifier = Modifier.padding(vertical = 2.dp))
+}
+
+@Composable
+private fun <T> Dropdown(current: String, icon: ImageVector?, options: List<Pair<String, T>>, onSelect: (T) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        AssetField(current, icon) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { (label, value) ->
+                DropdownMenuItem(text = { Text(label, fontSize = 13.sp) }, onClick = { onSelect(value); open = false })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorProperty(label: String, color: Color, onChange: (Color) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    PropertyRow(label) { ColorSwatch(color) { open = !open } }
+    if (open) {
+        // Tayyor palitra: 2 qator x 6 rang
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(start = 96.dp)) {
+            ColorPalette.chunked(6).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { c ->
+                        Box(
+                            Modifier
+                                .size(26.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(c)
+                                .border(
+                                    if (c == color) 2.dp else 1.dp,
+                                    if (c == color) ZaminColors.Text else ZaminColors.Border,
+                                    RoundedCornerShape(6.dp),
+                                )
+                                .clickable { onChange(c) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssetField(name: String, icon: ImageVector?, onClick: () -> Unit = {}) {
     Row(
         Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(6.dp)).background(ZaminColors.Field)
-            .clickable { }.padding(horizontal = 8.dp),
+            .clickable(onClick = onClick).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
@@ -221,8 +265,8 @@ private fun AssetField(name: String, icon: ImageVector?) {
 }
 
 @Composable
-private fun ColorSwatch(color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun ColorSwatch(color: Color, onClick: () -> Unit) {
+    Row(Modifier.clip(RoundedCornerShape(5.dp)).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 44.dp, height = 22.dp).clip(RoundedCornerShape(5.dp)).background(color).border(1.dp, ZaminColors.Border, RoundedCornerShape(5.dp)))
         Spacer(Modifier.width(8.dp))
         val hex = "#%06X".format(0xFFFFFF and (color.value shr 32).toInt())

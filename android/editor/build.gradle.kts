@@ -14,8 +14,8 @@ android {
         applicationId = "dev.zamin.editor"
         minSdk = 29          // Android 10+: Vulkan 1.1 kafolatlangan (64-bit qurilmalar)
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

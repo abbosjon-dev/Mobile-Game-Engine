@@ -72,7 +72,7 @@ fun BoxScope.ViewportOverlay(state: EditorState, stats: EngineStats, gpuName: St
     ) {
         val mono = FontFamily.Monospace
         Text(
-            "${"%.0f".format(stats.fps)} FPS · ${"%.1f".format(stats.frameMs)} ms",
+            "${"%.0f".format(stats.fps)} FPS · ${"%.1f".format(stats.frameMs)} ms · ${stats.drawCalls} draw",
             color = ZaminColors.Accent, fontFamily = mono, fontSize = 11.sp,
         )
         if (gpuName.isNotEmpty()) {

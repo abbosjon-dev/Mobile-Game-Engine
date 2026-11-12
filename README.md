@@ -2,7 +2,7 @@
 
 Android qurilmaning o'zida **2D va 3D** o'yinlar yaratish, sinash va APK qilib build qilish uchun mobil game engine va editor. Telefon va planshetda ishlaydi.
 
-> Holat: **Bosqich 0 — poydevor** (Vulkan viewport + moslashuvchan editor oynasi). To'liq reja: [PLAN.md](PLAN.md)
+> Holat: **Bosqich 1 — sahna tizimi** (obyektlar, tanlash, ko'chirish, 2D/3D kamera). To'liq reja: [PLAN.md](PLAN.md)
 
 ## Skrinshotlar
 
@@ -16,7 +16,8 @@ Android qurilmaning o'zida **2D va 3D** o'yinlar yaratish, sinash va APK qilib b
 
 ```
 engine/                  C++20 engine yadrosi
-  include/zamin/         Public headerlar (core, rhi)
+  include/zamin/         Public headerlar (core, math, scene, rhi)
+  src/scene/             Sahna: obyektlar ierarxiyasi, raycast bilan tanlash
   src/core/              Log, vaqt, Engine (render oqimi)
   src/rhi/vulkan/        Vulkan renderer (pre-rotation, depth, swapchain)
   src/platform/android/  JNI ko'prik
@@ -50,6 +51,14 @@ Har bir `main`ga push qilinganda GitHub Actions APK yasaydi. Uni Actions sahifas
 
 ## Hozir nima ishlaydi
 
-- Vulkan bilan 3D piramida chiziladi. Barmoq bilan surib aylantirish mumkin.
-- FPS, kadr vaqti va GPU nomi ko'rsatiladi.
+- **Sahna:** kub, sfera, piramida, tekislik va 2D sprite (rangli kvadrat). Obyektlar ichma-ich (ota-bola) joylasha oladi.
+- **Ierarxiya:** "+" orqali obyekt qo'shish, nusxa olish, o'chirish, ko'rinishni yoqish/o'chirish, qidiruv.
+- **Inspektor:** joylashuv, aylanish, masshtab, mesh turi va rang. O'zgarishlar darhol 3D sahnada ko'rinadi.
+- **Viewport boshqaruvi:**
+  - teginish — obyektni tanlash (yashil chegara bilan ko'rsatiladi), bo'sh joyga teginish — tanlovni bekor qilish;
+  - tanlangan obyekt ustidan surish — tanlangan asbob bilan ishlaydi: ko'chirish (yer tekisligi bo'ylab), aylantirish, masshtab;
+  - bo'sh joydan surish — kamerani aylantirish; ikki barmoq — surish va yaqinlashtirish;
+  - ikki marta teginish yoki Inspektordagi fokus tugmasi — kamerani obyektga qaratish.
+- **2D/3D:** 2D rejimda ortografik kamera XY tekisligiga qaraydi, to'r ham XY ga o'tadi.
+- FPS, kadr vaqti, draw call soni va GPU nomi ko'rsatiladi.
 - Planshetda yonma-yon panellar (Ierarxiya / Inspektor / Assetlar), telefonda pastki navigatsiya.

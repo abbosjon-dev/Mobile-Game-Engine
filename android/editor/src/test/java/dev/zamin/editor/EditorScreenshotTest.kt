@@ -22,7 +22,7 @@ abstract class EditorScreenshotBase(device: DeviceConfig, private val frame: Str
     val paparazzi = Paparazzi(deviceConfig = device, maxPercentDifference = 0.1)
 
     private val fakeEngine = object : EngineHost {
-        override fun stats() = EngineStats(fps = 60f, frameMs = 16.6f, frames = 1200, cameraYaw = 0.6f, cameraPitch = 0.35f)
+        override fun stats() = EngineStats(fps = 60f, frameMs = 16.6f, frames = 1200, cameraYaw = 0.6f, cameraPitch = 0.42f, drawCalls = 7)
         override fun deviceName() = "llvmpipe (offscreen)"
     }
 

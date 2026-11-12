@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Visibility
@@ -69,15 +70,22 @@ fun HierarchyPanel(state: EditorState, modifier: Modifier = Modifier) {
             Box {
                 ToolIconButton(Icons.Filled.Add, "Obyekt qo'shish", size = 28.dp) { addMenu = true }
                 DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
-                    listOf(ObjectType.Mesh, ObjectType.Sprite, ObjectType.Light, ObjectType.Camera, ObjectType.Empty).forEach { t ->
+                    CreateKind.entries.forEach { k ->
                         DropdownMenuItem(
-                            text = { Text(t.label, fontSize = 13.sp) },
-                            leadingIcon = { Icon(t.icon(), null, tint = t.tint(), modifier = Modifier.size(18.dp)) },
-                            onClick = { state.addObject(t); addMenu = false },
+                            text = { Text(k.label, fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    k.type.icon(), null,
+                                    tint = if (k.mesh != MeshKind.None) k.color else k.type.tint(),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                            onClick = { state.addObject(k); addMenu = false },
                         )
                     }
                 }
             }
+            ToolIconButton(Icons.Outlined.ContentCopy, "Nusxa olish", size = 28.dp) { state.duplicateSelected() }
             ToolIconButton(Icons.Outlined.DeleteOutline, "O'chirish", size = 28.dp) { state.deleteSelected() }
         }
         SearchField(query, { query = it }, Modifier.padding(8.dp))
@@ -137,7 +145,7 @@ private fun HierarchyRow(state: EditorState, row: TreeRow) {
                 )
             }
         }
-        Icon(o.type.icon(), null, tint = o.type.tint(), modifier = Modifier.size(16.dp))
+        Icon(o.type.icon(), null, tint = if (o.mesh != MeshKind.None) o.color else o.type.tint(), modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
         Text(
             o.name,

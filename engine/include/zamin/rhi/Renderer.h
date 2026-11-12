@@ -4,14 +4,17 @@
 #include <memory>
 #include <vector>
 
+#include "zamin/scene/Camera.h"
+#include "zamin/scene/Scene.h"
+
 namespace zamin::rhi {
 
 struct FrameParams {
     float clearColor[4] = {0.13f, 0.14f, 0.17f, 1.0f};
-    float rotationY = 0.6f;       // kamera yaw (radian)
-    float rotationX = 0.45f;      // kamera pitch (radian)
-    float cameraDistance = 3.4f;  // kamera nishondan masofasi
-    float objectSpin = 0.0f;      // namunaviy obyekt aylanishi (radian)
+    EditorCamera camera;
+    std::vector<DrawItem> items; // sahna obyektlari (Scene::buildDrawList)
+    bool showGrid = true;
+    float outlineColor[4] = {0.24f, 0.73f, 0.54f, 1.0f}; // tanlangan obyekt chegarasi (sRGB)
     float time = 0.0f;
 };
 

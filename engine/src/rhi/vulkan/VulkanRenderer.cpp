@@ -1,11 +1,12 @@
-// Zamin — Vulkan renderer (Bosqich 0)
+// Zamin — Vulkan renderer
 // Instance/device yaratish, swapchain (Android pre-rotation bilan),
-// render pass va oddiy 3D aylanuvchi piramida chizish.
+// sahna obyektlari (ichki meshlar), tanlangan obyekt chegarasi va yer to'ri.
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include <vulkan/vulkan.h>
 
 #include "zamin/core/Log.h"
+#include "zamin/math/Math.h"
 #include "zamin/rhi/Renderer.h"
 
 namespace zamin::rhi {
@@ -46,10 +48,15 @@ const uint32_t kGridFragSpv[] = {
 
 constexpr uint32_t kFramesInFlight = 2;
 
+// 128 bayt — Vulkan kafolatlagan minimal push constant hajmi
 struct PushConstants {
     float mvp[16];
-    float params[4]; // x: 1 = chiqish sRGB (rangni linearga o'tkazish kerak)
+    float n0[4]; // normal matritsa ustunlari; n0.w: 1 = chiqish sRGB
+    float n1[4]; //                           n1.w: 1 = yoritilmagan (outline)
+    float n2[4]; //                           n2.w: grid uchun 1 = 2D (XY tekislik)
+    float color[4];
 };
+static_assert(sizeof(PushConstants) == 128, "push constants 128 baytdan oshmasin");
 
 bool isSrgb(VkFormat f) {
     return f == VK_FORMAT_R8G8B8A8_SRGB || f == VK_FORMAT_B8G8R8A8_SRGB;
@@ -60,65 +67,71 @@ float srgbToLinear(float c) {
     return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
 }
 
-// --- Kichik matritsa yordamchilari (column-major, Vulkan clip space) ---
-struct Mat4 {
-    float m[16];
+// ---- Ichki meshlar (pozitsiya + normal) ----
+struct Vertex {
+    float px, py, pz;
+    float nx, ny, nz;
 };
 
-Mat4 identity() {
-    Mat4 r{};
-    r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1.0f;
-    return r;
+void addTri(std::vector<Vertex>& v, Vec3 a, Vec3 b, Vec3 c) {
+    const Vec3 e1 = b - a, e2 = c - a;
+    const Vec3 n = normalize({e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z,
+                              e1.x * e2.y - e1.y * e2.x});
+    for (Vec3 p : {a, b, c}) v.push_back({p.x, p.y, p.z, n.x, n.y, n.z});
 }
 
-Mat4 mul(const Mat4& a, const Mat4& b) {
-    Mat4 r{};
-    for (int c = 0; c < 4; ++c)
-        for (int rr = 0; rr < 4; ++rr) {
-            float s = 0.0f;
-            for (int k = 0; k < 4; ++k) s += a.m[k * 4 + rr] * b.m[c * 4 + k];
-            r.m[c * 4 + rr] = s;
+void addQuad(std::vector<Vertex>& v, Vec3 a, Vec3 b, Vec3 c, Vec3 d) {
+    addTri(v, a, b, c);
+    addTri(v, a, c, d);
+}
+
+void buildCube(std::vector<Vertex>& v) {
+    const float h = 0.5f;
+    const Vec3 p[8] = {{-h, -h, -h}, {h, -h, -h}, {h, h, -h}, {-h, h, -h},
+                       {-h, -h, h},  {h, -h, h},  {h, h, h},  {-h, h, h}};
+    addQuad(v, p[4], p[5], p[6], p[7]); // +Z
+    addQuad(v, p[1], p[0], p[3], p[2]); // -Z
+    addQuad(v, p[5], p[1], p[2], p[6]); // +X
+    addQuad(v, p[0], p[4], p[7], p[3]); // -X
+    addQuad(v, p[7], p[6], p[2], p[3]); // +Y
+    addQuad(v, p[0], p[1], p[5], p[4]); // -Y
+}
+
+void buildSphere(std::vector<Vertex>& v) {
+    constexpr int kSeg = 32, kRings = 16;
+    auto at = [](int ring, int seg) {
+        const float th = kPi * ring / kRings;
+        const float ph = 2.0f * kPi * seg / kSeg;
+        return Vec3{std::sin(th) * std::cos(ph), std::cos(th), std::sin(th) * std::sin(ph)};
+    };
+    auto push = [&](Vec3 n) { v.push_back({n.x * 0.5f, n.y * 0.5f, n.z * 0.5f, n.x, n.y, n.z}); };
+    for (int r = 0; r < kRings; ++r)
+        for (int s = 0; s < kSeg; ++s) {
+            const Vec3 a = at(r, s), b = at(r + 1, s), c = at(r + 1, s + 1), d = at(r, s + 1);
+            push(a); push(c); push(b);
+            push(a); push(d); push(c);
         }
-    return r;
 }
 
-Mat4 rotationX(float a) {
-    Mat4 r = identity();
-    const float c = std::cos(a), s = std::sin(a);
-    r.m[5] = c; r.m[6] = s; r.m[9] = -s; r.m[10] = c;
-    return r;
+void buildPyramid(std::vector<Vertex>& v) {
+    const float h = 0.5f;
+    const Vec3 apex{0, h, 0};
+    const Vec3 b0{-h, -h, -h}, b1{h, -h, -h}, b2{h, -h, h}, b3{-h, -h, h};
+    addTri(v, apex, b3, b2);
+    addTri(v, apex, b2, b1);
+    addTri(v, apex, b1, b0);
+    addTri(v, apex, b0, b3);
+    addQuad(v, b0, b1, b2, b3);
 }
 
-Mat4 rotationY(float a) {
-    Mat4 r = identity();
-    const float c = std::cos(a), s = std::sin(a);
-    r.m[0] = c; r.m[2] = -s; r.m[8] = s; r.m[10] = c;
-    return r;
+void buildPlane(std::vector<Vertex>& v) {
+    const float h = 0.5f;
+    addQuad(v, {-h, 0, h}, {h, 0, h}, {h, 0, -h}, {-h, 0, -h});
 }
 
-Mat4 rotationZ(float a) {
-    Mat4 r = identity();
-    const float c = std::cos(a), s = std::sin(a);
-    r.m[0] = c; r.m[1] = s; r.m[4] = -s; r.m[5] = c;
-    return r;
-}
-
-Mat4 translation(float x, float y, float z) {
-    Mat4 r = identity();
-    r.m[12] = x; r.m[13] = y; r.m[14] = z;
-    return r;
-}
-
-// Right-handed, depth 0..1, Vulkan Y pastga
-Mat4 perspective(float fovY, float aspect, float zNear, float zFar) {
-    Mat4 r{};
-    const float f = 1.0f / std::tan(fovY * 0.5f);
-    r.m[0] = f / aspect;
-    r.m[5] = -f;
-    r.m[10] = zFar / (zNear - zFar);
-    r.m[11] = -1.0f;
-    r.m[14] = (zNear * zFar) / (zNear - zFar);
-    return r;
+void buildQuad(std::vector<Vertex>& v) {
+    const float h = 0.5f;
+    addQuad(v, {-h, -h, 0}, {h, -h, 0}, {h, h, 0}, {-h, h, 0});
 }
 
 class VulkanRenderer final : public Renderer {
@@ -661,15 +674,56 @@ private:
         lci.pPushConstantRanges = &pcr;
         VK_CHECK(vkCreatePipelineLayout(m_device, &lci, nullptr, &m_pipelineLayout));
 
+        if (!createMeshBuffer()) return false;
         m_pipeline = buildPipeline(kBasicVertSpv, sizeof(kBasicVertSpv), kBasicFragSpv,
-                                   sizeof(kBasicFragSpv), /*transparent=*/false);
+                                   sizeof(kBasicFragSpv), PipeKind::Mesh);
+        m_outlinePipeline = buildPipeline(kBasicVertSpv, sizeof(kBasicVertSpv), kBasicFragSpv,
+                                          sizeof(kBasicFragSpv), PipeKind::Outline);
         m_gridPipeline = buildPipeline(kGridVertSpv, sizeof(kGridVertSpv), kGridFragSpv,
-                                       sizeof(kGridFragSpv), /*transparent=*/true);
-        return m_pipeline && m_gridPipeline;
+                                       sizeof(kGridFragSpv), PipeKind::Grid);
+        return m_pipeline && m_outlinePipeline && m_gridPipeline;
     }
 
+    // Barcha ichki meshlar bitta host-visible vertex buffer'da
+    bool createMeshBuffer() {
+        std::vector<Vertex> verts;
+        auto add = [&](MeshKind k, void (*build)(std::vector<Vertex>&)) {
+            const size_t first = verts.size();
+            build(verts);
+            m_meshes[size_t(k)] = {uint32_t(first), uint32_t(verts.size() - first)};
+        };
+        add(MeshKind::Cube, buildCube);
+        add(MeshKind::Sphere, buildSphere);
+        add(MeshKind::Pyramid, buildPyramid);
+        add(MeshKind::Plane, buildPlane);
+        add(MeshKind::Quad, buildQuad);
+
+        const VkDeviceSize bytes = verts.size() * sizeof(Vertex);
+        VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bci.size = bytes;
+        bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        VK_CHECK(vkCreateBuffer(m_device, &bci, nullptr, &m_vertexBuffer));
+        VkMemoryRequirements req;
+        vkGetBufferMemoryRequirements(m_device, m_vertexBuffer, &req);
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize = req.size;
+        mai.memoryTypeIndex = findMemoryType(req.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VK_CHECK(vkAllocateMemory(m_device, &mai, nullptr, &m_vertexMemory));
+        VK_CHECK(vkBindBufferMemory(m_device, m_vertexBuffer, m_vertexMemory, 0));
+        void* mapped = nullptr;
+        VK_CHECK(vkMapMemory(m_device, m_vertexMemory, 0, bytes, 0, &mapped));
+        std::memcpy(mapped, verts.data(), bytes);
+        vkUnmapMemory(m_device, m_vertexMemory);
+        ZAMIN_LOGI("Ichki meshlar: %zu vertex", verts.size());
+        return true;
+    }
+
+    enum class PipeKind { Mesh, Outline, Grid };
+
     VkPipeline buildPipeline(const uint32_t* vsCode, size_t vsBytes, const uint32_t* fsCode,
-                             size_t fsBytes, bool transparent) {
+                             size_t fsBytes, PipeKind kind) {
+        const bool transparent = kind == PipeKind::Grid;
         VkShaderModule vs = createShader(vsCode, vsBytes);
         VkShaderModule fs = createShader(fsCode, fsBytes);
         if (!vs || !fs) {
@@ -688,6 +742,17 @@ private:
         stages[1].pName = "main";
 
         VkPipelineVertexInputStateCreateInfo vin{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        VkVertexInputBindingDescription binding{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+        VkVertexInputAttributeDescription attrs[2] = {
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, px)},
+            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, nx)},
+        };
+        if (kind != PipeKind::Grid) {
+            vin.vertexBindingDescriptionCount = 1;
+            vin.pVertexBindingDescriptions = &binding;
+            vin.vertexAttributeDescriptionCount = 2;
+            vin.pVertexAttributeDescriptions = attrs;
+        }
         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
@@ -706,8 +771,9 @@ private:
 
         VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         ds.depthTestEnable = VK_TRUE;
-        ds.depthWriteEnable = transparent ? VK_FALSE : VK_TRUE;
-        ds.depthCompareOp = VK_COMPARE_OP_LESS;
+        // Outline depth yozmaydi: tanlangan obyekt uning ustidan chiziladi va faqat chegara qoladi
+        ds.depthWriteEnable = kind == PipeKind::Mesh ? VK_TRUE : VK_FALSE;
+        ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
         VkPipelineColorBlendAttachmentState cba{};
         if (transparent) {
@@ -783,8 +849,6 @@ private:
         VkRect2D scissor{{0, 0}, m_extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-
         // Pre-rotation: displey yo'nalishidagi aspect va burilish
         bool swapped = m_transform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR |
                                       VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
@@ -795,33 +859,68 @@ private:
         else if (m_transform & VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) preRot = 3.1415926f;
         else if (m_transform & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) preRot = 4.712389f;
 
-        // Orbit kamera: nishon atrofida yaw/pitch, masofa
-        Mat4 view = mul(translation(0.0f, -0.1f, -p.cameraDistance),
-                        mul(rotationX(p.rotationX), rotationY(p.rotationY)));
-        // Portret ekranda gorizontal ko'rish burchagini saqlaymiz (telefonda obyekt juda katta ko'rinmasin)
-        const float baseFov = 0.9f;
-        const float fovY = aspect >= 1.0f ? baseFov
-                                          : 2.0f * std::atan(std::tan(baseFov * 0.5f) / aspect);
-        Mat4 proj = perspective(std::fmin(fovY, 1.6f), aspect, 0.05f, 200.0f);
-        Mat4 viewProj = mul(rotationZ(preRot), mul(proj, view));
+        const Mat4 viewProj =
+            mul(rotationZ(preRot), mul(p.camera.projection(aspect), p.camera.view()));
 
-        PushConstants pc;
-        pc.params[0] = srgb ? 1.0f : 0.0f;
-        pc.params[1] = pc.params[2] = pc.params[3] = 0.0f;
+        const float srgbFlag = srgb ? 1.0f : 0.0f;
         const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertexBuffer, &offset);
 
-        // 1) Shaffof bo'lmagan obyektlar
-        Mat4 model = rotationY(p.objectSpin);
-        Mat4 mvp = mul(viewProj, model);
-        std::memcpy(pc.mvp, mvp.m, sizeof(pc.mvp));
-        vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
-        vkCmdDraw(cmd, 18, 1, 0, 0); // piramida: 6 uchburchak (4 yon + 2 asos)
+        auto drawItem = [&](const DrawItem& it, bool outline) {
+            const MeshRange& range = m_meshes[size_t(it.mesh)];
+            if (range.count == 0) return;
+            PushConstants pc{};
+            Mat4 model = it.model;
+            if (outline) {
+                // Chegara qalinligi kamera masofasiga bog'liq (ekranda taxminan bir xil)
+                const float k = p.camera.distance * (p.camera.mode2D ? 0.0045f : 0.0055f);
+                auto grow = [k](float s) { return s > 1e-4f ? 1.0f + 2.0f * k / s : 1.0f; };
+                Vec3 g{grow(it.scale.x), grow(it.scale.y), grow(it.scale.z)};
+                if (it.mesh == MeshKind::Plane) g.y = 1.0f;
+                if (it.mesh == MeshKind::Quad) g.z = 1.0f;
+                model = mul(model, scaling(g));
+                std::memcpy(pc.color, p.outlineColor, sizeof(pc.color));
+            } else {
+                std::memcpy(pc.color, it.color, sizeof(pc.color));
+            }
+            const Mat4 mvp = mul(viewProj, model);
+            std::memcpy(pc.mvp, mvp.m, sizeof(pc.mvp));
+            // Normal matritsa: (M^-1)^T ning 3x3 qismi
+            Mat4 inv;
+            if (!inverse(it.model, inv)) inv = Mat4::identity();
+            for (int c = 0; c < 3; ++c) {
+                float* col = c == 0 ? pc.n0 : c == 1 ? pc.n1 : pc.n2;
+                for (int r = 0; r < 3; ++r) col[r] = inv.m[r * 4 + c];
+            }
+            pc.n0[3] = srgbFlag;
+            // 2D sprite'lar yoritilmaydi (rang aynan ko'rinadi)
+            pc.n1[3] = (outline || it.mesh == MeshKind::Quad) ? 1.0f : 0.0f;
+            vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
+            vkCmdDraw(cmd, range.count, 1, range.first, 0);
+        };
+
+        // 1) Oddiy obyektlar; tanlangan obyekt oxirida — avval uning chegarasi
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        for (const DrawItem& it : p.items) {
+            if (it.selected) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_outlinePipeline);
+                drawItem(it, true);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+            }
+            drawItem(it, false);
+        }
 
         // 2) Yer to'ri (grid) — shaffof, depth yozmaydi
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
-        std::memcpy(pc.mvp, viewProj.m, sizeof(pc.mvp));
-        vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
-        vkCmdDraw(cmd, 6, 1, 0, 0);
+        if (p.showGrid) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
+            PushConstants pc{};
+            std::memcpy(pc.mvp, viewProj.m, sizeof(pc.mvp));
+            pc.n0[3] = srgbFlag;
+            pc.n2[3] = p.camera.mode2D ? 1.0f : 0.0f;
+            vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
+            vkCmdDraw(cmd, 6, 1, 0, 0);
+        }
 
         vkCmdEndRenderPass(cmd);
         if (end) vkEndCommandBuffer(cmd);
@@ -860,6 +959,9 @@ private:
         if (m_device) {
             vkDeviceWaitIdle(m_device);
             if (m_pipeline) vkDestroyPipeline(m_device, m_pipeline, nullptr);
+            if (m_outlinePipeline) vkDestroyPipeline(m_device, m_outlinePipeline, nullptr);
+            if (m_vertexBuffer) vkDestroyBuffer(m_device, m_vertexBuffer, nullptr);
+            if (m_vertexMemory) vkFreeMemory(m_device, m_vertexMemory, nullptr);
             if (m_gridPipeline) vkDestroyPipeline(m_device, m_gridPipeline, nullptr);
             if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
             if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -901,6 +1003,15 @@ private:
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     VkPipeline m_gridPipeline = VK_NULL_HANDLE;
+    VkPipeline m_outlinePipeline = VK_NULL_HANDLE;
+
+    struct MeshRange {
+        uint32_t first = 0;
+        uint32_t count = 0;
+    };
+    std::array<MeshRange, size_t(MeshKind::Count)> m_meshes{};
+    VkBuffer m_vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_vertexMemory = VK_NULL_HANDLE;
 
     std::array<Frame, kFramesInFlight> m_frames{};
     uint32_t m_frameIndex = 0;

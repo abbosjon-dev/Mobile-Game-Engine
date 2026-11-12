@@ -36,6 +36,7 @@ add_library(zamin_engine STATIC
     src/core/Log.cpp
     src/core/Time.cpp
     src/core/Engine.cpp
+    src/scene/Scene.cpp
     src/rhi/vulkan/VulkanRenderer.cpp
 )
 add_dependencies(zamin_engine zamin_shaders)

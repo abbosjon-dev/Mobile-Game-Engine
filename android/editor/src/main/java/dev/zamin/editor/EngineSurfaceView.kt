@@ -6,19 +6,32 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.ViewConfiguration
+import dev.zamin.editor.ui.EditorState
+import dev.zamin.editor.ui.ViewportGestures
 
-/** Engine viewport'i: Vulkan shu Surface'ga chizadi. */
+/** Engine viewport'i: Vulkan shu Surface'ga chizadi, sensor hodisalarini ViewportGestures ga beradi. */
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
-class EngineSurfaceView(context: Context, private val engine: ZaminEngine) :
+class EngineSurfaceView(context: Context, private val engine: ZaminEngine, state: EditorState) :
     SurfaceView(context), SurfaceHolder.Callback {
 
-    private var lastX = 0f
-    private var lastY = 0f
+    private val gestures = ViewportGestures(engine, state, ViewConfiguration.get(context).scaledTouchSlop.toFloat())
+    private var focusX = 0f
+    private var focusY = 0f
 
-    // Ikki barmoq bilan yaqinlashtirish/uzoqlashtirish
+    // Ikki barmoq bilan yaqinlashtirish/uzoqlashtirish va surish
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+            focusX = detector.focusX
+            focusY = detector.focusY
+            return true
+        }
+
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            engine.zoom(detector.scaleFactor)
+            gestures.onZoom(detector.scaleFactor)
+            gestures.onPan(detector.focusX - focusX, detector.focusY - focusY)
+            focusX = detector.focusX
+            focusY = detector.focusY
             return true
         }
     })
@@ -42,19 +55,11 @@ class EngineSurfaceView(context: Context, private val engine: ZaminEngine) :
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_UP -> {
-                val idx = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP && event.actionIndex == 0) 1 else 0
-                lastX = event.getX(idx)
-                lastY = event.getY(idx)
-            }
-            MotionEvent.ACTION_MOVE -> {
-                // Bitta barmoq — kamerani aylantirish (orbit)
-                if (event.pointerCount == 1 && !scaleDetector.isInProgress) {
-                    engine.drag(event.x - lastX, event.y - lastY)
-                }
-                lastX = event.getX(0)
-                lastY = event.getY(0)
-            }
+            MotionEvent.ACTION_DOWN -> gestures.onDown(event.x, event.y, event.eventTime)
+            MotionEvent.ACTION_POINTER_DOWN -> gestures.onMultiTouch()
+            MotionEvent.ACTION_MOVE -> if (event.pointerCount == 1) gestures.onMove(event.x, event.y)
+            MotionEvent.ACTION_UP -> gestures.onUp(event.eventTime)
+            MotionEvent.ACTION_CANCEL -> gestures.onMultiTouch()
         }
         return true
     }

@@ -6,10 +6,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.zamin.editor.ui.EditorScreen
+import dev.zamin.editor.ui.EditorState
 import dev.zamin.editor.ui.ZaminTheme
 
 class MainActivity : ComponentActivity() {
     private lateinit var engine: ZaminEngine
+    private val state = EditorState()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -17,8 +19,8 @@ class MainActivity : ComponentActivity() {
         engine = ZaminEngine()
         setContent {
             ZaminTheme {
-                EditorScreen(engine) { modifier ->
-                    AndroidView(factory = { ctx -> EngineSurfaceView(ctx, engine) }, modifier = modifier)
+                EditorScreen(engine, state) { modifier ->
+                    AndroidView(factory = { ctx -> EngineSurfaceView(ctx, engine, state) }, modifier = modifier)
                 }
             }
         }

@@ -127,12 +127,16 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 - **Natija:** telefonda ilova ochiladi, native viewport ishlaydi
 
 ### Bosqich 1 — Sahna + 2D/3D asoslari (8–10 hafta)
-- [ ] ECS + Transform + sahna saqlash/yuklash (JSON)
-- [ ] Sprite renderer (batching, atlas), mesh renderer (glTF), kamera 2D (ortografik) va 3D (perspektiv)
-- [ ] Touch input, virtual joystick
+- [x] Sahna + Transform ierarxiyasi (ota-bola), ichki meshlar: kub, sfera, piramida, tekislik, sprite kvadrat
+- [ ] Sahna saqlash/yuklash (JSON)
+- [x] Kamera 2D (ortografik) va 3D (perspektiv orbit), viewport'da tanlash (raycast) va tanlangan obyekt chegarasi
+- [ ] Sprite renderer (tekstura, batching, atlas), mesh renderer (glTF)
+- [x] Viewport touch: teginib tanlash, surib ko'chirish/aylantirish/masshtab, ikki barmoq pan/zoom, ikki marta teginib fokus
+- [ ] Virtual joystick
 - [ ] Box2D (2D) va Jolt (3D) fizika integratsiyasi
 - [ ] Luau skript: `onStart`, `onUpdate`, `onCollision` + asosiy API
-- [ ] Editor: ierarxiya, inspector, viewport gizmo, asset import (PNG, OGG)
+- [x] Editor: ierarxiya va inspector engine sahnasi bilan sinxron (qo'shish, nusxa, o'chirish, transform, mesh, rang)
+- [ ] Viewport gizmo (o'q strelkalari), asset import (PNG, OGG)
 - [ ] Play mode (editor ichida test)
 - [ ] Audio
 - **Natija:** telefonda oddiy 2D yoki 3D o'yin yaratib, editor ichida o'ynash mumkin
