@@ -1,6 +1,17 @@
-# Mobile Game Engine — Reja (Android, 1-bosqich)
+# Zamin Game Engine — Reja (Android)
 
 **Maqsad:** Android qurilmaning o'zida 2D/3D o'yin yaratish, ishga tushirish (test), va tayyor APK qilib build qilish imkonini beruvchi game engine + editor. Unity/Unreal'dagi asosiy imkoniyatlar (scene editor, kod, blueprint/vizual skript, assetlar, terrain, fizika, audio) — sensorli ekranga moslashtirilgan holda.
+
+## 0. Qabul qilingan qarorlar
+
+| Savol | Qaror |
+|---|---|
+| Nomi | **Zamin Game Engine** |
+| Skript tili | **Luau** (oddiy, qulay, tez) + Blueprint vizual skript |
+| 2D / 3D | Ikkalasi **boshidan birga** (bitta sahna tizimi, 2D = ortografik kamera + sprite) |
+| Qurilmalar | Telefon va planshet (moslashuvchan layout) |
+| Minimal Android | **Android 10 (API 29)** — Vulkan 1.1 kafolatlangan, GLES zaxira kerak emas |
+| Grafika | Faqat **Vulkan** |
 
 ---
 
@@ -51,7 +62,7 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 | Qism | Tanlov | Sabab |
 |---|---|---|
 | Til (core) | C++20, NDK r27+, CMake | Standart, tez |
-| Grafika | **Vulkan 1.1** asosiy + **OpenGL ES 3.0** zaxira (RHI abstraksiya qatlami orqali) | Eski qurilmalarni ham qamrash |
+| Grafika | **Vulkan 1.1** (RHI abstraksiya qatlami orqali, kelajakda Metal/D3D) | Android 10+ da kafolatlangan |
 | Shader | GLSL → SPIR-V (oldindan), runtime'da `glslang` (foydalanuvchi shaderlari uchun) | Qurilmada shader kompilyatsiya |
 | ECS | EnTT | Yetuk, header-only |
 | 2D fizika | Box2D v3 | Sanoat standarti |
@@ -106,22 +117,29 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 ## 3. Bosqichlar (milestone'lar)
 
 ### Bosqich 0 — Poydevor (2–3 hafta)
-- [ ] Repo tuzilmasi, CMake + Gradle, NDK sozlash, CI (GitHub Actions: build + test)
-- [ ] Android app skeleti: Compose editor + `SurfaceView` + JNI ko'prik
-- [ ] `core`: logging, fayl tizimi, main loop, vaqt
-- [ ] `rhi`: Vulkan ishga tushirish, ekranni rang bilan tozalash, uchburchak chizish
+- [x] Repo tuzilmasi, CMake + Gradle, NDK sozlash, CI (GitHub Actions: APK build)
+- [x] Android app skeleti: Compose editor + `SurfaceView` + JNI ko'prik
+- [x] Moslashuvchan layout: planshet (yonma-yon panellar) / telefon (pastki navigatsiya)
+- [x] `core`: logging, render oqimi, vaqt/FPS
+- [ ] `core`: fayl tizimi, job system
+- [x] `rhi`: Vulkan ishga tushirish, swapchain (pre-rotation), depth buffer, 3D piramida + touch bilan aylantirish
+- [ ] Haqiqiy qurilmalarda sinov
 - **Natija:** telefonda ilova ochiladi, native viewport ishlaydi
 
-### Bosqich 1 — 2D MVP (6–8 hafta)
-- [ ] ECS + Transform + sahna saqlash/yuklash (JSON)
-- [ ] Sprite renderer (batching, atlas), kamera 2D
-- [ ] Touch input, virtual joystick
-- [ ] Box2D integratsiya (rigidbody, collider komponentlari)
+### Bosqich 1 — Sahna + 2D/3D asoslari (8–10 hafta)
+- [x] Sahna + Transform ierarxiyasi (ota-bola), ichki meshlar: kub, sfera, piramida, tekislik, sprite kvadrat
+- [ ] Sahna saqlash/yuklash (JSON)
+- [x] Kamera 2D (ortografik) va 3D (perspektiv orbit), viewport'da tanlash (raycast) va tanlangan obyekt chegarasi
+- [ ] Sprite renderer (tekstura, batching, atlas), mesh renderer (glTF)
+- [x] Viewport touch: teginib tanlash, surib ko'chirish/aylantirish/masshtab, ikki barmoq pan/zoom, ikki marta teginib fokus
+- [ ] Virtual joystick
+- [ ] Box2D (2D) va Jolt (3D) fizika integratsiyasi
 - [ ] Luau skript: `onStart`, `onUpdate`, `onCollision` + asosiy API
-- [ ] Editor: ierarxiya, inspector, viewport gizmo, asset import (PNG, OGG)
+- [x] Editor: ierarxiya va inspector engine sahnasi bilan sinxron (qo'shish, nusxa, o'chirish, transform, mesh, rang)
+- [ ] Viewport gizmo (o'q strelkalari), asset import (PNG, OGG)
 - [ ] Play mode (editor ichida test)
 - [ ] Audio
-- **Natija:** telefonda oddiy 2D o'yin yaratib, editor ichida o'ynash mumkin
+- **Natija:** telefonda oddiy 2D yoki 3D o'yin yaratib, editor ichida o'ynash mumkin
 
 ### Bosqich 2 — Qurilmada APK build (3–4 hafta)
 - [ ] Runtime Player shablon APK (CI'da build qilinib editor ichiga joylanadi)
@@ -131,10 +149,9 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 - [ ] O'rnatish (`PackageInstaller`) va ulashish
 - **Natija:** to'liq sikl — yarat → test qil → APK → o'rnat. **Bu birinchi muhim demo.**
 
-### Bosqich 3 — 3D asoslari (8–10 hafta)
-- [ ] 3D kamera, mesh renderer, glTF import
+### Bosqich 3 — 3D kengaytirilgan (8–10 hafta)
 - [ ] PBR material, yorug'lik (directional/point/spot), soyalar
-- [ ] Jolt fizika (rigidbody, collider, character controller)
+- [ ] Character controller, raycast, trigger'lar
 - [ ] Skybox, post-process
 - [ ] 3D gizmo va sensorli orbit/fly kamera editorda
 - [ ] Skeletal animatsiya
