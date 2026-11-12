@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.ui.viewinterop.AndroidView
 import dev.zamin.editor.ui.EditorScreen
 import dev.zamin.editor.ui.ZaminTheme
 
@@ -16,7 +17,9 @@ class MainActivity : ComponentActivity() {
         engine = ZaminEngine()
         setContent {
             ZaminTheme {
-                EditorScreen(engine)
+                EditorScreen(engine) { modifier ->
+                    AndroidView(factory = { ctx -> EngineSurfaceView(ctx, engine) }, modifier = modifier)
+                }
             }
         }
     }

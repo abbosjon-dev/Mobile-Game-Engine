@@ -4,6 +4,14 @@ Android qurilmaning o'zida **2D va 3D** o'yinlar yaratish, sinash va APK qilib b
 
 > Holat: **Bosqich 0 — poydevor** (Vulkan viewport + moslashuvchan editor oynasi). To'liq reja: [PLAN.md](PLAN.md)
 
+## Skrinshotlar
+
+| Telefon | Planshet |
+|---|---|
+| <img src="docs/screenshots/editor_phone.png" width="260"> | <img src="docs/screenshots/editor_tablet.png" width="560"> |
+
+> Skrinshotlar `tools/screenshots.sh` bilan olinadi. Viewport'dagi rasmni engine'ning Vulkan renderer'i offscreen rejimda chizadi (GPU yoki mesa lavapipe'da), editor UI'ni Paparazzi rasmga oladi. Bu haqiqiy qurilmadan olingan skrinshot emas, lekin ikkalasi ham ilovadagi aynan o'sha kod bilan chiziladi.
+
 ## Tuzilma
 
 ```
@@ -14,6 +22,9 @@ engine/                  C++20 engine yadrosi
   src/platform/android/  JNI ko'prik
   shaders/               GLSL shaderlar (build vaqtida SPIR-V ga)
 android/editor/          Kotlin + Jetpack Compose editor ilovasi
+tools/snapshot/          Engine kadrini PNG ga chizuvchi desktop vosita
+tools/screenshots.sh     Barcha skrinshotlarni yangilash
+docs/screenshots/        Oxirgi skrinshotlar
 ```
 
 ## Talablar
@@ -25,8 +36,14 @@ android/editor/          Kotlin + Jetpack Compose editor ilovasi
 
 ```bash
 echo "sdk.dir=/path/to/android-sdk" > local.properties
-./gradlew :editor:assembleDebug
-# APK: android/editor/build/outputs/apk/debug/editor-debug.apk
+./gradlew :editor:assembleRelease
+# APK: android/editor/build/outputs/apk/release/editor-release.apk (~4 MB)
+```
+
+Skrinshotlarni yangilash (Linux, Vulkan drayveri kerak — masalan `mesa-vulkan-drivers`):
+
+```bash
+./tools/screenshots.sh
 ```
 
 Har bir `main`ga push qilinganda GitHub Actions APK yasaydi. Uni Actions sahifasidagi **Artifacts** bo'limidan yuklab olish mumkin.

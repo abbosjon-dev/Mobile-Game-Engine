@@ -3,6 +3,7 @@
 
 layout(push_constant) uniform Push {
     mat4 mvp;
+    vec4 params; // x: 1 = sRGB chiqish
 } pc;
 
 layout(location = 0) out vec3 vColor;
@@ -37,5 +38,7 @@ void main() {
     gl_Position = pc.mvp * vec4(POS[i], 1.0);
     // Cho'qqi biroz yorqinroq — oddiy gradient
     float lift = (i < 12 && i % 3 == 0) ? 1.25 : 1.0;
-    vColor = FACE[i / 3] * lift;
+    vec3 c = min(FACE[i / 3] * lift, vec3(1.0));
+    // Palitra sRGB da; sRGB framebuffer uchun linearga o'tkazamiz
+    vColor = pc.params.x > 0.5 ? pow(c, vec3(2.2)) : c;
 }

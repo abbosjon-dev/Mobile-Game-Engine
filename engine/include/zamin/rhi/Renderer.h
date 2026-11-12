@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace zamin::rhi {
 
@@ -26,6 +27,10 @@ public:
     virtual bool renderFrame(const FrameParams& params) = 0;
 
     virtual const char* deviceName() const = 0;
+
+    // Ekransiz chizish (skrinshot/test). RGBA8 piksellar.
+    virtual bool renderOffscreen(uint32_t width, uint32_t height, const FrameParams& params,
+                                 std::vector<uint8_t>& outRgba) = 0;
 };
 
 std::unique_ptr<Renderer> createVulkanRenderer();

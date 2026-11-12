@@ -21,8 +21,14 @@ internal object ZaminNative {
 
 data class EngineStats(val fps: Float, val frameMs: Float, val frames: Long)
 
+/** Editor UI engine'dan nimani so'rashi mumkin (testlarda soxta nusxa ishlatiladi). */
+interface EngineHost {
+    fun stats(): EngineStats
+    fun deviceName(): String
+}
+
 /** Engine nusxasi uchun Kotlin o'rami. */
-class ZaminEngine : AutoCloseable {
+class ZaminEngine : EngineHost, AutoCloseable {
     private var handle: Long = ZaminNative.nativeCreate()
 
     fun surfaceCreated(surface: Surface) = ifAlive { ZaminNative.nativeSurfaceCreated(it, surface) }
@@ -31,13 +37,13 @@ class ZaminEngine : AutoCloseable {
     fun setPaused(paused: Boolean) = ifAlive { ZaminNative.nativeSetPaused(it, paused) }
     fun drag(dx: Float, dy: Float) = ifAlive { ZaminNative.nativeOnDrag(it, dx, dy) }
 
-    fun stats(): EngineStats {
+    override fun stats(): EngineStats {
         if (handle == 0L) return EngineStats(0f, 0f, 0)
         val s = ZaminNative.nativeGetStats(handle)
         return EngineStats(s[0], s[1], s[2].toLong())
     }
 
-    fun deviceName(): String = if (handle == 0L) "" else ZaminNative.nativeGetDeviceName(handle)
+    override fun deviceName(): String = if (handle == 0L) "" else ZaminNative.nativeGetDeviceName(handle)
 
     override fun close() {
         if (handle != 0L) {

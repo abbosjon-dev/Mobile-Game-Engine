@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -41,7 +42,17 @@ constexpr uint32_t kFramesInFlight = 2;
 
 struct PushConstants {
     float mvp[16];
+    float params[4]; // x: 1 = chiqish sRGB (rangni linearga o'tkazish kerak)
 };
+
+bool isSrgb(VkFormat f) {
+    return f == VK_FORMAT_R8G8B8A8_SRGB || f == VK_FORMAT_B8G8R8A8_SRGB;
+}
+
+// Ranglar sRGB da beriladi; sRGB framebuffer'ga linear qiymat yozilishi kerak.
+float srgbToLinear(float c) {
+    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
 
 // --- Kichik matritsa yordamchilari (column-major, Vulkan clip space) ---
 struct Mat4 {
@@ -200,6 +211,109 @@ public:
 
     const char* deviceName() const override { return m_deviceName; }
 
+    // Ekransiz (offscreen) chizish: skrinshot va testlar uchun.
+    // Natija: RGBA8 (sRGB) piksellar, yuqori-chapdan boshlab.
+    bool renderOffscreen(uint32_t width, uint32_t height, const FrameParams& params,
+                         std::vector<uint8_t>& outRgba) override {
+        m_headless = true;
+        if (!m_instance && !createInstance()) return false;
+        if (!m_device && !createDevice()) return false;
+        m_format = VK_FORMAT_R8G8B8A8_SRGB;
+        m_extent = {width, height};
+        m_transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+        if (!createDepth()) return false;
+        if (!m_renderPass && !createRenderPass()) return false;
+        if (!m_pipeline && !createPipeline()) return false;
+
+        // Rang tasviri
+        VkImage color = VK_NULL_HANDLE;
+        VkDeviceMemory colorMem = VK_NULL_HANDLE;
+        VkImageView colorView = VK_NULL_HANDLE;
+        VkFramebuffer fb = VK_NULL_HANDLE;
+        VkBuffer readback = VK_NULL_HANDLE;
+        VkDeviceMemory readbackMem = VK_NULL_HANDLE;
+        const VkDeviceSize bytes = VkDeviceSize(width) * height * 4;
+
+        VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        ici.imageType = VK_IMAGE_TYPE_2D;
+        ici.format = m_format;
+        ici.extent = {width, height, 1};
+        ici.mipLevels = 1;
+        ici.arrayLayers = 1;
+        ici.samples = VK_SAMPLE_COUNT_1_BIT;
+        ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ici.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        VK_CHECK(vkCreateImage(m_device, &ici, nullptr, &color));
+        VkMemoryRequirements req;
+        vkGetImageMemoryRequirements(m_device, color, &req);
+        VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        mai.allocationSize = req.size;
+        mai.memoryTypeIndex = findMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_CHECK(vkAllocateMemory(m_device, &mai, nullptr, &colorMem));
+        VK_CHECK(vkBindImageMemory(m_device, color, colorMem, 0));
+
+        VkImageViewCreateInfo vci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        vci.image = color;
+        vci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        vci.format = m_format;
+        vci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VK_CHECK(vkCreateImageView(m_device, &vci, nullptr, &colorView));
+
+        VkImageView attachments[] = {colorView, m_depthView};
+        VkFramebufferCreateInfo fci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        fci.renderPass = m_renderPass;
+        fci.attachmentCount = 2;
+        fci.pAttachments = attachments;
+        fci.width = width;
+        fci.height = height;
+        fci.layers = 1;
+        VK_CHECK(vkCreateFramebuffer(m_device, &fci, nullptr, &fb));
+
+        VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bci.size = bytes;
+        bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        VK_CHECK(vkCreateBuffer(m_device, &bci, nullptr, &readback));
+        vkGetBufferMemoryRequirements(m_device, readback, &req);
+        mai.allocationSize = req.size;
+        mai.memoryTypeIndex = findMemoryType(req.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VK_CHECK(vkAllocateMemory(m_device, &mai, nullptr, &readbackMem));
+        VK_CHECK(vkBindBufferMemory(m_device, readback, readbackMem, 0));
+
+        Frame& frame = m_frames[0];
+        VK_CHECK(vkWaitForFences(m_device, 1, &frame.fence, VK_TRUE, UINT64_MAX));
+        VK_CHECK(vkResetFences(m_device, 1, &frame.fence));
+        recordScene(frame.cmd, fb, params, /*end=*/false);
+
+        // Render pass oxirida tasvir TRANSFER_SRC holatida bo'ladi
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {width, height, 1};
+        vkCmdCopyImageToBuffer(frame.cmd, color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback, 1, &region);
+        vkEndCommandBuffer(frame.cmd);
+
+        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &frame.cmd;
+        VK_CHECK(vkQueueSubmit(m_queue, 1, &submit, frame.fence));
+        VK_CHECK(vkWaitForFences(m_device, 1, &frame.fence, VK_TRUE, UINT64_MAX));
+
+        void* mapped = nullptr;
+        VK_CHECK(vkMapMemory(m_device, readbackMem, 0, bytes, 0, &mapped));
+        outRgba.resize(bytes);
+        std::memcpy(outRgba.data(), mapped, bytes);
+        vkUnmapMemory(m_device, readbackMem);
+
+        vkDestroyBuffer(m_device, readback, nullptr);
+        vkFreeMemory(m_device, readbackMem, nullptr);
+        vkDestroyFramebuffer(m_device, fb, nullptr);
+        vkDestroyImageView(m_device, colorView, nullptr);
+        vkDestroyImage(m_device, color, nullptr);
+        vkFreeMemory(m_device, colorMem, nullptr);
+        destroySwapchain(); // depth resurslarini tozalaydi
+        return true;
+    }
+
 private:
     struct Frame {
         VkCommandBuffer cmd = VK_NULL_HANDLE;
@@ -221,10 +335,13 @@ private:
         app.engineVersion = VK_MAKE_VERSION(0, 1, 0);
         app.apiVersion = VK_API_VERSION_1_1;
 
-        std::vector<const char*> extensions = {VK_KHR_SURFACE_EXTENSION_NAME};
+        std::vector<const char*> extensions;
+        if (!m_headless) {
+            extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 #if defined(__ANDROID__)
-        extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+            extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
 #endif
+        }
         std::vector<const char*> layers;
 #if !defined(NDEBUG)
         uint32_t layerCount = 0;
@@ -264,8 +381,8 @@ private:
             std::vector<VkQueueFamilyProperties> families(qCount);
             vkGetPhysicalDeviceQueueFamilyProperties(pd, &qCount, families.data());
             for (uint32_t i = 0; i < qCount; ++i) {
-                VkBool32 present = VK_FALSE;
-                vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, m_surface, &present);
+                VkBool32 present = m_headless ? VK_TRUE : VK_FALSE;
+                if (!m_headless) vkGetPhysicalDeviceSurfaceSupportKHR(pd, i, m_surface, &present);
                 if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) {
                     m_physical = pd;
                     m_queueFamily = i;
@@ -281,7 +398,7 @@ private:
 
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(m_physical, &props);
-        std::strncpy(m_deviceName, props.deviceName, sizeof(m_deviceName) - 1);
+        std::snprintf(m_deviceName, sizeof(m_deviceName), "%s", props.deviceName);
         ZAMIN_LOGI("GPU: %s (Vulkan %u.%u.%u)", props.deviceName,
                    VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion),
                    VK_VERSION_PATCH(props.apiVersion));
@@ -296,7 +413,7 @@ private:
         VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         dci.queueCreateInfoCount = 1;
         dci.pQueueCreateInfos = &qci;
-        dci.enabledExtensionCount = 1;
+        dci.enabledExtensionCount = m_headless ? 0 : 1;
         dci.ppEnabledExtensionNames = deviceExt;
         VK_CHECK(vkCreateDevice(m_physical, &dci, nullptr, &m_device));
         vkGetDeviceQueue(m_device, m_queueFamily, 0, &m_queue);
@@ -468,7 +585,8 @@ private:
         att[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         att[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         att[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        att[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        att[0].finalLayout = m_headless ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+                                        : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
         att[1].format = m_depthFormat;
         att[1].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -500,13 +618,22 @@ private:
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 
+        // Offscreen: chizish tugagach nusxalashdan oldin kutish
+        VkSubpassDependency deps[2] = {dep, {}};
+        deps[1].srcSubpass = 0;
+        deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        deps[1].dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        deps[1].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
         VkRenderPassCreateInfo rci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
         rci.attachmentCount = 2;
         rci.pAttachments = att;
         rci.subpassCount = 1;
         rci.pSubpasses = &sub;
-        rci.dependencyCount = 1;
-        rci.pDependencies = &dep;
+        rci.dependencyCount = m_headless ? 2 : 1;
+        rci.pDependencies = deps;
         VK_CHECK(vkCreateRenderPass(m_device, &rci, nullptr, &m_renderPass));
         return true;
     }
@@ -599,18 +726,25 @@ private:
     }
 
     void recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, const FrameParams& p) {
+        recordScene(cmd, m_images[imageIndex].framebuffer, p, /*end=*/true);
+    }
+
+    void recordScene(VkCommandBuffer cmd, VkFramebuffer framebuffer, const FrameParams& p, bool end) {
         vkResetCommandBuffer(cmd, 0);
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(cmd, &bi);
 
+        const bool srgb = isSrgb(m_format);
         VkClearValue clears[2];
-        std::memcpy(clears[0].color.float32, p.clearColor, sizeof(float) * 4);
+        for (int i = 0; i < 3; ++i)
+            clears[0].color.float32[i] = srgb ? srgbToLinear(p.clearColor[i]) : p.clearColor[i];
+        clears[0].color.float32[3] = p.clearColor[3];
         clears[1].depthStencil = {1.0f, 0};
 
         VkRenderPassBeginInfo rbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         rbi.renderPass = m_renderPass;
-        rbi.framebuffer = m_images[imageIndex].framebuffer;
+        rbi.framebuffer = framebuffer;
         rbi.renderArea = {{0, 0}, m_extent};
         rbi.clearValueCount = 2;
         rbi.pClearValues = clears;
@@ -639,11 +773,13 @@ private:
 
         PushConstants pc;
         std::memcpy(pc.mvp, mvp.m, sizeof(pc.mvp));
+        pc.params[0] = srgb ? 1.0f : 0.0f;
+        pc.params[1] = pc.params[2] = pc.params[3] = 0.0f;
         vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
         vkCmdDraw(cmd, 18, 1, 0, 0); // piramida: 6 uchburchak (4 yon + 2 asos)
 
         vkCmdEndRenderPass(cmd);
-        vkEndCommandBuffer(cmd);
+        if (end) vkEndCommandBuffer(cmd);
     }
 
     bool recreateSwapchain() {
@@ -722,6 +858,7 @@ private:
     std::array<Frame, kFramesInFlight> m_frames{};
     uint32_t m_frameIndex = 0;
     bool m_needsRecreate = false;
+    bool m_headless = false;
     char m_deviceName[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE] = "Unknown";
 };
 

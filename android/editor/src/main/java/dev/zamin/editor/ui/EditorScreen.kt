@@ -41,10 +41,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
+import dev.zamin.editor.EngineHost
 import dev.zamin.editor.EngineStats
-import dev.zamin.editor.EngineSurfaceView
-import dev.zamin.editor.ZaminEngine
 import kotlinx.coroutines.delay
 
 private enum class Panel(val title: String, val icon: ImageVector) {
@@ -59,7 +57,10 @@ private enum class Panel(val title: String, val icon: ImageVector) {
  * - Telefon: to'liq viewport + pastki navigatsiya orqali ochiladigan panel.
  */
 @Composable
-fun EditorScreen(engine: ZaminEngine) {
+fun EditorScreen(
+    engine: EngineHost,
+    viewport: @Composable (Modifier) -> Unit,
+) {
     var stats by remember { mutableStateOf(EngineStats(0f, 0f, 0)) }
     var gpuName by remember { mutableStateOf("") }
     var playing by remember { mutableStateOf(false) }
@@ -83,9 +84,9 @@ fun EditorScreen(engine: ZaminEngine) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val isTablet = maxWidth >= 840.dp
             if (isTablet) {
-                TabletLayout(engine, stats, gpuName)
+                TabletLayout(viewport, stats, gpuName)
             } else {
-                PhoneLayout(engine, stats, gpuName)
+                PhoneLayout(viewport, stats, gpuName)
             }
         }
     }
@@ -116,11 +117,11 @@ private fun Toolbar(playing: Boolean, onTogglePlay: () -> Unit) {
 }
 
 @Composable
-private fun TabletLayout(engine: ZaminEngine, stats: EngineStats, gpuName: String) {
+private fun TabletLayout(viewport: @Composable (Modifier) -> Unit, stats: EngineStats, gpuName: String) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.weight(1f)) {
             PanelBox(Panel.Hierarchy, Modifier.width(260.dp).fillMaxHeight())
-            Viewport(engine, stats, gpuName, Modifier.weight(1f).fillMaxHeight())
+            Viewport(viewport, stats, gpuName, Modifier.weight(1f).fillMaxHeight())
             PanelBox(Panel.Inspector, Modifier.width(300.dp).fillMaxHeight())
         }
         PanelBox(Panel.Assets, Modifier.fillMaxWidth().height(200.dp))
@@ -128,10 +129,10 @@ private fun TabletLayout(engine: ZaminEngine, stats: EngineStats, gpuName: Strin
 }
 
 @Composable
-private fun PhoneLayout(engine: ZaminEngine, stats: EngineStats, gpuName: String) {
+private fun PhoneLayout(viewport: @Composable (Modifier) -> Unit, stats: EngineStats, gpuName: String) {
     var open by remember { mutableStateOf<Panel?>(null) }
     Column(Modifier.fillMaxSize()) {
-        Viewport(engine, stats, gpuName, Modifier.weight(1f).fillMaxWidth())
+        Viewport(viewport, stats, gpuName, Modifier.weight(1f).fillMaxWidth())
         open?.let { PanelBox(it, Modifier.fillMaxWidth().height(260.dp)) }
         NavigationBar(containerColor = ZaminColors.PanelHeader, tonalElevation = 0.dp) {
             Panel.entries.forEach { p ->
@@ -147,12 +148,14 @@ private fun PhoneLayout(engine: ZaminEngine, stats: EngineStats, gpuName: String
 }
 
 @Composable
-private fun Viewport(engine: ZaminEngine, stats: EngineStats, gpuName: String, modifier: Modifier) {
+private fun Viewport(
+    viewport: @Composable (Modifier) -> Unit,
+    stats: EngineStats,
+    gpuName: String,
+    modifier: Modifier,
+) {
     Box(modifier.border(1.dp, ZaminColors.Border)) {
-        AndroidView(
-            factory = { ctx -> EngineSurfaceView(ctx, engine) },
-            modifier = Modifier.fillMaxSize(),
-        )
+        viewport(Modifier.fillMaxSize())
         StatsOverlay(stats, gpuName, Modifier.align(Alignment.TopStart).padding(8.dp))
     }
 }

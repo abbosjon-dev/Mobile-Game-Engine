@@ -23,10 +23,13 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew :editor:assembleDebug --no-daemon
+      - name: Build release APK
+        run: ./gradlew :editor:assembleRelease --no-daemon
+
+      - name: Verify screenshots (Paparazzi)
+        run: ./gradlew :editor:verifyPaparazziDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
-          name: zamin-editor-debug
-          path: android/editor/build/outputs/apk/debug/editor-debug.apk
+          name: zamin-editor
+          path: android/editor/build/outputs/apk/release/editor-release.apk
