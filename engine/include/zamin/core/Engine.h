@@ -17,6 +17,8 @@ struct EngineStats {
     float fps = 0.0f;
     float frameMs = 0.0f;
     uint64_t frames = 0;
+    float cameraYaw = 0.0f;
+    float cameraPitch = 0.0f;
 };
 
 // Engine — o'z render oqimida (thread) ishlaydi.
@@ -40,6 +42,8 @@ public:
 
     // Sensorli boshqaruv: dx/dy — piksellarda siljish.
     void onDrag(float dx, float dy);
+    // Ikki barmoq: masshtab (pinch). factor > 1 — yaqinlashtirish.
+    void onZoom(float factor);
 
     EngineStats stats() const;
     std::string deviceName() const;
@@ -60,8 +64,9 @@ private:
     uint32_t m_width = 0, m_height = 0;
     bool m_resized = false;
 
-    float m_rotX = 0.0f, m_rotY = 0.0f;
-    float m_velY = 0.6f;
+    float m_rotX = 0.45f, m_rotY = 0.6f;
+    float m_distance = 3.4f;
+    float m_spin = 0.0f;
 
     EngineStats m_stats;
     std::string m_deviceName;

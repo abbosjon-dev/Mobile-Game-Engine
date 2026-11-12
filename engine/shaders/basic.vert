@@ -36,9 +36,14 @@ const vec3 FACE[6] = vec3[](
 void main() {
     int i = gl_VertexIndex;
     gl_Position = pc.mvp * vec4(POS[i], 1.0);
-    // Cho'qqi biroz yorqinroq — oddiy gradient
-    float lift = (i < 12 && i % 3 == 0) ? 1.25 : 1.0;
-    vec3 c = min(FACE[i / 3] * lift, vec3(1.0));
+
+    // Yassi soyalash: uchburchak normali (obyekt fazosida) va qat'iy yorug'lik
+    int t = (i / 3) * 3;
+    vec3 n = normalize(cross(POS[t + 1] - POS[t], POS[t + 2] - POS[t]));
+    vec3 lightDir = normalize(vec3(0.5, 0.9, 0.6));
+    float diffuse = abs(dot(n, lightDir));
+    float shade = 0.62 + 0.45 * diffuse;
+    vec3 c = min(FACE[i / 3] * shade, vec3(1.0));
     // Palitra sRGB da; sRGB framebuffer uchun linearga o'tkazamiz
     vColor = pc.params.x > 0.5 ? pow(c, vec3(2.2)) : c;
 }

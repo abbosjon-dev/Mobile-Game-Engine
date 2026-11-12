@@ -59,8 +59,13 @@ void Engine::onDrag(float dx, float dy) {
     constexpr float kSensitivity = 0.01f;
     m_rotY += dx * kSensitivity;
     m_rotX += dy * kSensitivity;
-    m_rotX = std::fmax(-1.4f, std::fmin(1.4f, m_rotX));
-    m_velY = 0.0f; // foydalanuvchi boshqarsa avtomatik aylanish to'xtaydi
+    m_rotX = std::fmax(-0.2f, std::fmin(1.5f, m_rotX));
+}
+
+void Engine::onZoom(float factor) {
+    std::lock_guard lock(m_mutex);
+    if (factor <= 0.0f) return;
+    m_distance = std::fmax(1.2f, std::fmin(40.0f, m_distance / factor));
 }
 
 EngineStats Engine::stats() const {
@@ -105,9 +110,11 @@ void Engine::renderLoop() {
             }
 
             const float dt = m_timer.tick();
-            m_rotY += m_velY * dt;
+            m_spin += 0.5f * dt;
             params.rotationX = m_rotX;
             params.rotationY = m_rotY;
+            params.cameraDistance = m_distance;
+            params.objectSpin = m_spin;
             params.time = static_cast<float>(m_timer.totalSeconds());
         }
 
@@ -117,6 +124,8 @@ void Engine::renderLoop() {
         m_stats.fps = m_timer.fps();
         m_stats.frameMs = m_timer.deltaSeconds() * 1000.0f;
         m_stats.frames = m_timer.frameIndex();
+        m_stats.cameraYaw = m_rotY;
+        m_stats.cameraPitch = m_rotX;
     }
 
     if (m_hasWindow) m_renderer->detachWindow();

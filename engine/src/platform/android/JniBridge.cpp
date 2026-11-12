@@ -79,14 +79,21 @@ Java_dev_zamin_editor_ZaminNative_nativeOnDrag(JNIEnv*, jclass, jlong handle, jf
     if (state) state->engine->onDrag(dx, dy);
 }
 
+JNIEXPORT void JNICALL
+Java_dev_zamin_editor_ZaminNative_nativeOnZoom(JNIEnv*, jclass, jlong handle, jfloat factor) {
+    auto* state = fromHandle(handle);
+    if (state) state->engine->onZoom(factor);
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_dev_zamin_editor_ZaminNative_nativeGetStats(JNIEnv* env, jclass, jlong handle) {
-    jfloatArray arr = env->NewFloatArray(3);
+    jfloatArray arr = env->NewFloatArray(5);
     auto* state = fromHandle(handle);
     if (!state) return arr;
     const zamin::EngineStats s = state->engine->stats();
-    const jfloat values[3] = {s.fps, s.frameMs, static_cast<jfloat>(s.frames)};
-    env->SetFloatArrayRegion(arr, 0, 3, values);
+    const jfloat values[5] = {s.fps, s.frameMs, static_cast<jfloat>(s.frames), s.cameraYaw,
+                              s.cameraPitch};
+    env->SetFloatArrayRegion(arr, 0, 5, values);
     return arr;
 }
 

@@ -7,9 +7,11 @@
 namespace zamin::rhi {
 
 struct FrameParams {
-    float clearColor[4] = {0.09f, 0.10f, 0.12f, 1.0f};
-    float rotationY = 0.0f;   // radian
-    float rotationX = 0.0f;   // radian
+    float clearColor[4] = {0.13f, 0.14f, 0.17f, 1.0f};
+    float rotationY = 0.6f;       // kamera yaw (radian)
+    float rotationX = 0.45f;      // kamera pitch (radian)
+    float cameraDistance = 3.4f;  // kamera nishondan masofasi
+    float objectSpin = 0.0f;      // namunaviy obyekt aylanishi (radian)
     float time = 0.0f;
 };
 

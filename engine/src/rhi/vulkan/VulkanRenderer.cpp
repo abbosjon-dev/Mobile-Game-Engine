@@ -28,6 +28,12 @@ const uint32_t kBasicVertSpv[] = {
 const uint32_t kBasicFragSpv[] = {
 #include "basic.frag.spv.inc"
 };
+const uint32_t kGridVertSpv[] = {
+#include "grid.vert.spv.inc"
+};
+const uint32_t kGridFragSpv[] = {
+#include "grid.frag.spv.inc"
+};
 
 #define VK_CHECK(expr)                                                        \
     do {                                                                      \
@@ -648,17 +654,27 @@ private:
     }
 
     bool createPipeline() {
-        VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants)};
+        VkPushConstantRange pcr{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                sizeof(PushConstants)};
         VkPipelineLayoutCreateInfo lci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         lci.pushConstantRangeCount = 1;
         lci.pPushConstantRanges = &pcr;
         VK_CHECK(vkCreatePipelineLayout(m_device, &lci, nullptr, &m_pipelineLayout));
 
-        VkShaderModule vs = createShader(kBasicVertSpv, sizeof(kBasicVertSpv));
-        VkShaderModule fs = createShader(kBasicFragSpv, sizeof(kBasicFragSpv));
+        m_pipeline = buildPipeline(kBasicVertSpv, sizeof(kBasicVertSpv), kBasicFragSpv,
+                                   sizeof(kBasicFragSpv), /*transparent=*/false);
+        m_gridPipeline = buildPipeline(kGridVertSpv, sizeof(kGridVertSpv), kGridFragSpv,
+                                       sizeof(kGridFragSpv), /*transparent=*/true);
+        return m_pipeline && m_gridPipeline;
+    }
+
+    VkPipeline buildPipeline(const uint32_t* vsCode, size_t vsBytes, const uint32_t* fsCode,
+                             size_t fsBytes, bool transparent) {
+        VkShaderModule vs = createShader(vsCode, vsBytes);
+        VkShaderModule fs = createShader(fsCode, fsBytes);
         if (!vs || !fs) {
             ZAMIN_LOGE("Shader modul yaratilmadi");
-            return false;
+            return VK_NULL_HANDLE;
         }
 
         VkPipelineShaderStageCreateInfo stages[2]{};
@@ -690,10 +706,19 @@ private:
 
         VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         ds.depthTestEnable = VK_TRUE;
-        ds.depthWriteEnable = VK_TRUE;
+        ds.depthWriteEnable = transparent ? VK_FALSE : VK_TRUE;
         ds.depthCompareOp = VK_COMPARE_OP_LESS;
 
         VkPipelineColorBlendAttachmentState cba{};
+        if (transparent) {
+            cba.blendEnable = VK_TRUE;
+            cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            cba.colorBlendOp = VK_BLEND_OP_ADD;
+            cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            cba.alphaBlendOp = VK_BLEND_OP_ADD;
+        }
         cba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -718,11 +743,15 @@ private:
         pci.pDynamicState = &dsi;
         pci.layout = m_pipelineLayout;
         pci.renderPass = m_renderPass;
-        VkResult r = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pci, nullptr, &m_pipeline);
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkResult r = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pci, nullptr, &pipeline);
         vkDestroyShaderModule(m_device, vs, nullptr);
         vkDestroyShaderModule(m_device, fs, nullptr);
-        VK_CHECK(r);
-        return true;
+        if (r != VK_SUCCESS) {
+            ZAMIN_LOGE("vkCreateGraphicsPipelines: %d", r);
+            return VK_NULL_HANDLE;
+        }
+        return pipeline;
     }
 
     void recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, const FrameParams& p) {
@@ -766,17 +795,33 @@ private:
         else if (m_transform & VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) preRot = 3.1415926f;
         else if (m_transform & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) preRot = 4.712389f;
 
-        Mat4 model = mul(rotationX(p.rotationX), rotationY(p.rotationY));
-        Mat4 view = translation(0.0f, 0.0f, -3.0f);
-        Mat4 proj = perspective(1.0f, aspect, 0.1f, 100.0f);
-        Mat4 mvp = mul(rotationZ(preRot), mul(proj, mul(view, model)));
+        // Orbit kamera: nishon atrofida yaw/pitch, masofa
+        Mat4 view = mul(translation(0.0f, -0.1f, -p.cameraDistance),
+                        mul(rotationX(p.rotationX), rotationY(p.rotationY)));
+        // Portret ekranda gorizontal ko'rish burchagini saqlaymiz (telefonda obyekt juda katta ko'rinmasin)
+        const float baseFov = 0.9f;
+        const float fovY = aspect >= 1.0f ? baseFov
+                                          : 2.0f * std::atan(std::tan(baseFov * 0.5f) / aspect);
+        Mat4 proj = perspective(std::fmin(fovY, 1.6f), aspect, 0.05f, 200.0f);
+        Mat4 viewProj = mul(rotationZ(preRot), mul(proj, view));
 
         PushConstants pc;
-        std::memcpy(pc.mvp, mvp.m, sizeof(pc.mvp));
         pc.params[0] = srgb ? 1.0f : 0.0f;
         pc.params[1] = pc.params[2] = pc.params[3] = 0.0f;
-        vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc), &pc);
+        const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // 1) Shaffof bo'lmagan obyektlar
+        Mat4 model = rotationY(p.objectSpin);
+        Mat4 mvp = mul(viewProj, model);
+        std::memcpy(pc.mvp, mvp.m, sizeof(pc.mvp));
+        vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
         vkCmdDraw(cmd, 18, 1, 0, 0); // piramida: 6 uchburchak (4 yon + 2 asos)
+
+        // 2) Yer to'ri (grid) — shaffof, depth yozmaydi
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gridPipeline);
+        std::memcpy(pc.mvp, viewProj.m, sizeof(pc.mvp));
+        vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
 
         vkCmdEndRenderPass(cmd);
         if (end) vkEndCommandBuffer(cmd);
@@ -815,6 +860,7 @@ private:
         if (m_device) {
             vkDeviceWaitIdle(m_device);
             if (m_pipeline) vkDestroyPipeline(m_device, m_pipeline, nullptr);
+            if (m_gridPipeline) vkDestroyPipeline(m_device, m_gridPipeline, nullptr);
             if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
             if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
             for (auto& f : m_frames) {
@@ -854,6 +900,7 @@ private:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_gridPipeline = VK_NULL_HANDLE;
 
     std::array<Frame, kFramesInFlight> m_frames{};
     uint32_t m_frameIndex = 0;

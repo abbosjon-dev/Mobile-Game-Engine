@@ -17,7 +17,7 @@ endif()
 
 set(ZAMIN_SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${ZAMIN_SHADER_OUT})
-set(ZAMIN_SHADERS basic.vert basic.frag)
+set(ZAMIN_SHADERS basic.vert basic.frag grid.vert grid.frag)
 set(ZAMIN_SHADER_OUTPUTS)
 foreach(shader ${ZAMIN_SHADERS})
     set(src ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader})

@@ -15,11 +15,18 @@ internal object ZaminNative {
     @JvmStatic external fun nativeSurfaceDestroyed(handle: Long)
     @JvmStatic external fun nativeSetPaused(handle: Long, paused: Boolean)
     @JvmStatic external fun nativeOnDrag(handle: Long, dx: Float, dy: Float)
+    @JvmStatic external fun nativeOnZoom(handle: Long, factor: Float)
     @JvmStatic external fun nativeGetStats(handle: Long): FloatArray
     @JvmStatic external fun nativeGetDeviceName(handle: Long): String
 }
 
-data class EngineStats(val fps: Float, val frameMs: Float, val frames: Long)
+data class EngineStats(
+    val fps: Float = 0f,
+    val frameMs: Float = 0f,
+    val frames: Long = 0,
+    val cameraYaw: Float = 0.6f,
+    val cameraPitch: Float = 0.45f,
+)
 
 /** Editor UI engine'dan nimani so'rashi mumkin (testlarda soxta nusxa ishlatiladi). */
 interface EngineHost {
@@ -36,11 +43,12 @@ class ZaminEngine : EngineHost, AutoCloseable {
     fun surfaceDestroyed() = ifAlive { ZaminNative.nativeSurfaceDestroyed(it) }
     fun setPaused(paused: Boolean) = ifAlive { ZaminNative.nativeSetPaused(it, paused) }
     fun drag(dx: Float, dy: Float) = ifAlive { ZaminNative.nativeOnDrag(it, dx, dy) }
+    fun zoom(factor: Float) = ifAlive { ZaminNative.nativeOnZoom(it, factor) }
 
     override fun stats(): EngineStats {
-        if (handle == 0L) return EngineStats(0f, 0f, 0)
+        if (handle == 0L) return EngineStats()
         val s = ZaminNative.nativeGetStats(handle)
-        return EngineStats(s[0], s[1], s[2].toLong())
+        return EngineStats(s[0], s[1], s[2].toLong(), s[3], s[4])
     }
 
     override fun deviceName(): String = if (handle == 0L) "" else ZaminNative.nativeGetDeviceName(handle)

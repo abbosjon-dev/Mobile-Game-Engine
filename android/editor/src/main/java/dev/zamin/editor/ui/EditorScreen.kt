@@ -2,6 +2,7 @@ package dev.zamin.editor.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,15 +19,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountTree
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,8 +32,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,158 +42,172 @@ import dev.zamin.editor.EngineHost
 import dev.zamin.editor.EngineStats
 import kotlinx.coroutines.delay
 
-private enum class Panel(val title: String, val icon: ImageVector) {
-    Hierarchy("Ierarxiya", Icons.Filled.AccountTree),
-    Inspector("Inspektor", Icons.Filled.Tune),
-    Assets("Assetlar", Icons.Filled.Folder),
+private enum class PhonePanel(val title: String, val icon: ImageVector) {
+    Hierarchy("Ierarxiya", Icons.Outlined.AccountTree),
+    Inspector("Inspektor", Icons.Outlined.Tune),
+    Assets("Assetlar", Icons.Outlined.Folder),
 }
 
 /**
  * Asosiy editor oynasi.
  * - Planshet (kenglik >= 840dp): chapda ierarxiya, markazda viewport, o'ngda inspektor, pastda assetlar.
- * - Telefon: to'liq viewport + pastki navigatsiya orqali ochiladigan panel.
+ * - Telefon: to'liq viewport, chapda suzuvchi asboblar, pastda tablar va ochiladigan panel.
  */
 @Composable
 fun EditorScreen(
     engine: EngineHost,
+    state: EditorState = remember { EditorState() },
     viewport: @Composable (Modifier) -> Unit,
 ) {
-    var stats by remember { mutableStateOf(EngineStats(0f, 0f, 0)) }
+    var stats by remember { mutableStateOf(EngineStats()) }
     var gpuName by remember { mutableStateOf("") }
-    var playing by remember { mutableStateOf(false) }
 
     LaunchedEffect(engine) {
         while (true) {
             stats = engine.stats()
             if (gpuName.isEmpty()) gpuName = engine.deviceName()
-            delay(500)
+            delay(33)
         }
     }
 
-    Column(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(ZaminColors.Background)
             .safeDrawingPadding()
     ) {
-        Toolbar(playing = playing, onTogglePlay = { playing = !playing })
-
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val isTablet = maxWidth >= 840.dp
+        val isTablet = maxWidth >= 840.dp
+        Column(Modifier.fillMaxSize()) {
+            EditorToolbar(state, compact = !isTablet)
+            Divider()
             if (isTablet) {
-                TabletLayout(viewport, stats, gpuName)
+                TabletLayout(state, viewport, stats, gpuName)
             } else {
-                PhoneLayout(viewport, stats, gpuName)
+                PhoneLayout(state, viewport, stats, gpuName)
             }
         }
     }
 }
 
 @Composable
-private fun Toolbar(playing: Boolean, onTogglePlay: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .background(ZaminColors.PanelHeader)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Zamin", color = ZaminColors.Accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(Modifier.width(8.dp))
-        Text("Game Engine", color = ZaminColors.TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onTogglePlay) {
-            Icon(
-                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (playing) "To'xtatish" else "O'ynash",
-                tint = if (playing) ZaminColors.Sun else ZaminColors.Accent,
-            )
-        }
-    }
+private fun Divider(vertical: Boolean = false) {
+    if (vertical) Box(Modifier.width(1.dp).fillMaxHeight().background(ZaminColors.Border))
+    else Box(Modifier.fillMaxWidth().height(1.dp).background(ZaminColors.Border))
 }
 
 @Composable
-private fun TabletLayout(viewport: @Composable (Modifier) -> Unit, stats: EngineStats, gpuName: String) {
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.weight(1f)) {
-            PanelBox(Panel.Hierarchy, Modifier.width(260.dp).fillMaxHeight())
-            Viewport(viewport, stats, gpuName, Modifier.weight(1f).fillMaxHeight())
-            PanelBox(Panel.Inspector, Modifier.width(300.dp).fillMaxHeight())
-        }
-        PanelBox(Panel.Assets, Modifier.fillMaxWidth().height(200.dp))
-    }
-}
-
-@Composable
-private fun PhoneLayout(viewport: @Composable (Modifier) -> Unit, stats: EngineStats, gpuName: String) {
-    var open by remember { mutableStateOf<Panel?>(null) }
-    Column(Modifier.fillMaxSize()) {
-        Viewport(viewport, stats, gpuName, Modifier.weight(1f).fillMaxWidth())
-        open?.let { PanelBox(it, Modifier.fillMaxWidth().height(260.dp)) }
-        NavigationBar(containerColor = ZaminColors.PanelHeader, tonalElevation = 0.dp) {
-            Panel.entries.forEach { p ->
-                NavigationBarItem(
-                    selected = open == p,
-                    onClick = { open = if (open == p) null else p },
-                    icon = { Icon(p.icon, contentDescription = p.title) },
-                    label = { Text(p.title, fontSize = 11.sp) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun Viewport(
+private fun TabletLayout(
+    state: EditorState,
     viewport: @Composable (Modifier) -> Unit,
     stats: EngineStats,
     gpuName: String,
-    modifier: Modifier,
 ) {
-    Box(modifier.border(1.dp, ZaminColors.Border)) {
-        viewport(Modifier.fillMaxSize())
-        StatsOverlay(stats, gpuName, Modifier.align(Alignment.TopStart).padding(8.dp))
+    Row(Modifier.fillMaxSize()) {
+        HierarchyPanel(state, Modifier.width(260.dp).fillMaxHeight())
+        Divider(vertical = true)
+        Column(Modifier.weight(1f)) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                viewport(Modifier.fillMaxSize())
+                ViewportOverlay(state, stats, gpuName)
+            }
+            Divider()
+            AssetsPanel(state, Modifier.fillMaxWidth().height(190.dp))
+        }
+        Divider(vertical = true)
+        InspectorPanel(state, Modifier.width(320.dp).fillMaxHeight())
     }
 }
 
 @Composable
-private fun StatsOverlay(stats: EngineStats, gpuName: String, modifier: Modifier) {
+private fun PhoneLayout(
+    state: EditorState,
+    viewport: @Composable (Modifier) -> Unit,
+    stats: EngineStats,
+    gpuName: String,
+) {
+    var open by remember { mutableStateOf<PhonePanel?>(null) }
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            viewport(Modifier.fillMaxSize())
+            ViewportOverlay(state, stats, gpuName)
+            FloatingTools(state, Modifier.align(Alignment.CenterStart).padding(start = 10.dp))
+        }
+        open?.let { panel ->
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .height(330.dp)
+                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                    .background(ZaminColors.Panel)
+            ) {
+                Box(Modifier.fillMaxWidth().height(14.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = 36.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(ZaminColors.FieldHover))
+                }
+                when (panel) {
+                    PhonePanel.Hierarchy -> HierarchyPanel(state, Modifier.fillMaxSize())
+                    PhonePanel.Inspector -> InspectorPanel(state, Modifier.fillMaxSize())
+                    PhonePanel.Assets -> AssetsPanel(state, Modifier.fillMaxSize())
+                }
+            }
+        }
+        Divider()
+        Row(
+            Modifier.fillMaxWidth().height(58.dp).background(ZaminColors.PanelHeader).padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PhonePanel.entries.forEach { p ->
+                val sel = open == p
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { open = if (sel) null else p }
+                        .padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        Modifier
+                            .size(width = 52.dp, height = 26.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(if (sel) ZaminColors.AccentDim else Color.Transparent),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(p.icon, p.title, tint = if (sel) ZaminColors.Accent else ZaminColors.TextMuted, modifier = Modifier.size(19.dp))
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        p.title, fontSize = 11.sp,
+                        color = if (sel) ZaminColors.Text else ZaminColors.TextMuted,
+                        fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Telefon uchun viewport chetidagi vertikal asboblar paneli. */
+@Composable
+private fun FloatingTools(state: EditorState, modifier: Modifier) {
     Column(
         modifier
-            .background(ZaminColors.Background.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xE616191E))
+            .border(1.dp, ZaminColors.Border, RoundedCornerShape(12.dp))
+            .padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val mono = FontFamily.Monospace
-        Text("FPS ${"%.0f".format(stats.fps)}  ${"%.1f".format(stats.frameMs)} ms",
-            color = ZaminColors.Accent, fontFamily = mono, fontSize = 11.sp)
-        if (gpuName.isNotEmpty()) {
-            Text("Vulkan · $gpuName", color = ZaminColors.TextMuted, fontFamily = mono, fontSize = 10.sp)
+        Tool.entries.forEach { t ->
+            ToolIconButton(t.icon(), t.label, selected = state.tool == t, size = 40.dp) { state.tool = t }
         }
-    }
-}
-
-@Composable
-private fun PanelBox(panel: Panel, modifier: Modifier) {
-    Column(modifier.background(ZaminColors.Panel).border(1.dp, ZaminColors.Border)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(ZaminColors.PanelHeader)
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Box(Modifier.width(26.dp).height(1.dp).background(ZaminColors.Border))
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(7.dp)).clickable { state.is3D = !state.is3D },
+            contentAlignment = Alignment.Center,
         ) {
-            Icon(panel.icon, contentDescription = null, tint = ZaminColors.TextMuted, modifier = Modifier.size(16.dp))
-            Text(panel.title, color = ZaminColors.TextMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        }
-        Box(Modifier.fillMaxSize().padding(10.dp)) {
-            val text = when (panel) {
-                Panel.Hierarchy -> "▸ Sahna\n    ▸ Kamera\n    ▸ Yorug'lik\n    ▸ Piramida"
-                Panel.Inspector -> "Obyekt tanlanmagan"
-                Panel.Assets -> "Assetlar hali yo'q"
-            }
-            Text(text, color = ZaminColors.TextMuted, fontSize = 12.sp)
+            Text(if (state.is3D) "3D" else "2D", color = ZaminColors.Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
