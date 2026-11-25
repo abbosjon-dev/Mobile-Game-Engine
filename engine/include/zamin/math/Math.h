@@ -86,6 +86,47 @@ inline Mat4 trs(Vec3 pos, Vec3 rotDeg, Vec3 scale) {
     return mul(translation(pos), mul(rotationEuler(rotDeg), scaling(scale)));
 }
 
+inline Vec3 cross(Vec3 a, Vec3 b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+// Ixtiyoriy o'q atrofida aylanish (Rodrig formulasi). axis — birlik vektor, a — radian.
+inline Mat4 rotationAxis(Vec3 axis, float a) {
+    const float c = std::cos(a), s = std::sin(a), t = 1.0f - c;
+    const float x = axis.x, y = axis.y, z = axis.z;
+    Mat4 r = Mat4::identity();
+    r.m[0] = t * x * x + c;     r.m[4] = t * x * y - s * z; r.m[8] = t * x * z + s * y;
+    r.m[1] = t * x * y + s * z; r.m[5] = t * y * y + c;     r.m[9] = t * y * z - s * x;
+    r.m[2] = t * x * z - s * y; r.m[6] = t * y * z + s * x; r.m[10] = t * z * z + c;
+    return r;
+}
+
+// Matritsadan faqat aylanish qismi (ustunlar normallanadi, ko'chirish olib tashlanadi).
+inline Mat4 rotationPart(const Mat4& a) {
+    Mat4 r = Mat4::identity();
+    for (int c = 0; c < 3; ++c) {
+        const Vec3 col = normalize({a.m[c * 4], a.m[c * 4 + 1], a.m[c * 4 + 2]});
+        r.m[c * 4] = col.x; r.m[c * 4 + 1] = col.y; r.m[c * 4 + 2] = col.z;
+    }
+    return r;
+}
+
+// rotationEuler ga teskari: R = Ry * Rx * Rz dan Euler burchaklar (gradus).
+inline Vec3 eulerFromRotation(const Mat4& r) {
+    const float sx = -r.m[9]; // R[1][2] = -sin(x)
+    const float x = std::asin(std::fmax(-1.0f, std::fmin(1.0f, sx)));
+    float y, z;
+    if (std::fabs(sx) < 0.9999f) {
+        y = std::atan2(r.m[8], r.m[10]); // R[0][2], R[2][2]
+        z = std::atan2(r.m[1], r.m[5]);  // R[1][0], R[1][1]
+    } else {
+        // Gimbal lock: z = 0 deb olamiz
+        y = std::atan2(-r.m[2], r.m[0]);
+        z = 0.0f;
+    }
+    return {x / kDegToRad, y / kDegToRad, z / kDegToRad};
+}
+
 // Right-handed, depth 0..1, Vulkan Y pastga
 inline Mat4 perspective(float fovY, float aspect, float zNear, float zFar) {
     Mat4 r;

@@ -42,7 +42,7 @@ import dev.zamin.editor.EngineHost
 import dev.zamin.editor.EngineStats
 import kotlinx.coroutines.delay
 
-private enum class PhonePanel(val title: String, val icon: ImageVector) {
+enum class PhonePanel(val title: String, val icon: ImageVector) {
     Hierarchy("Ierarxiya", Icons.Outlined.AccountTree),
     Inspector("Inspektor", Icons.Outlined.Tune),
     Assets("Assetlar", Icons.Outlined.Folder),
@@ -127,12 +127,15 @@ private fun PhoneLayout(
     stats: EngineStats,
     gpuName: String,
 ) {
-    var open by remember { mutableStateOf<PhonePanel?>(null) }
+    var open by remember { mutableStateOf(state.initialPhonePanel) }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             viewport(Modifier.fillMaxSize())
             ViewportOverlay(state, stats, gpuName)
-            FloatingTools(state, Modifier.align(Alignment.CenterStart).padding(start = 10.dp))
+            // O'yin rejimida tahrirlash asboblari kerak emas
+            if (state.playState == PlayState.Edit) {
+                FloatingTools(state, Modifier.align(Alignment.CenterStart).padding(start = 10.dp))
+            }
         }
         open?.let { panel ->
             Column(

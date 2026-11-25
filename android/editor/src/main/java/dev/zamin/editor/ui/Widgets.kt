@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Folder
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.zamin.editor.project.AssetKind
 
 fun ObjectType.icon(): ImageVector = when (this) {
     ObjectType.Scene -> Icons.Outlined.Public
@@ -66,6 +68,7 @@ fun AssetKind.icon(): ImageVector = when (this) {
     AssetKind.Mesh -> Icons.Outlined.ViewInAr
     AssetKind.Script -> Icons.Filled.Code
     AssetKind.Audio -> Icons.Filled.Audiotrack
+    AssetKind.Other -> Icons.AutoMirrored.Filled.InsertDriveFile
 }
 
 fun AssetKind.tint(): Color = when (this) {
@@ -76,6 +79,7 @@ fun AssetKind.tint(): Color = when (this) {
     AssetKind.Mesh -> ZaminColors.AxisZ
     AssetKind.Script -> Color(0xFFB48CF0)
     AssetKind.Audio -> Color(0xFFF08C5A)
+    AssetKind.Other -> ZaminColors.TextMuted
 }
 
 /** Panel sarlavhasi: belgi, nom va o'ng tomonda amallar. */

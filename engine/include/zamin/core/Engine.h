@@ -65,6 +65,14 @@ public:
     // Obyektni barmoq ortidan siljitish: 3D da gorizontal tekislikda, 2D da XY da.
     // Muvaffaqiyatli bo'lsa yangi lokal pozitsiyani qaytaradi.
     bool dragEntity(uint32_t id, float x0, float y0, float x1, float y1, Vec3& outLocalPos);
+    // Obyektni barmoq siljishi bilan aylantirish. 3D: gorizontal — dunyo Y o'qi atrofida,
+    // vertikal — kameraning o'ng o'qi atrofida. 2D: ekran tekisligida (Z).
+    // Muvaffaqiyatli bo'lsa yangi lokal Euler burchaklar (gradus).
+    bool rotateEntity(uint32_t id, float dx, float dy, Vec3& outLocalEuler);
+
+    // O'yin rejimi: sahnadagi asosiy kamera ko'rinishi, to'r/gizmo/tanlov chizilmaydi,
+    // editor kamerasi boshqaruvi o'chadi.
+    void setPlaying(bool playing);
 
     EngineStats stats() const;
     std::string deviceName() const;
@@ -84,6 +92,7 @@ private:
     bool m_hasWindow = false;
     uint32_t m_width = 0, m_height = 0;
     bool m_resized = false;
+    bool m_playing = false;
 
     EditorCamera m_camera;
     Scene m_scene;

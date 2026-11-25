@@ -23,11 +23,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Engine unit tests (C++)
+        run: |
+          cmake -S engine/tests -B build/tests
+          cmake --build build/tests
+          ./build/tests/zamin_tests
+
       - name: Build release APK
         run: ./gradlew :editor:assembleRelease --no-daemon
 
-      - name: Verify screenshots (Paparazzi)
-        run: ./gradlew :editor:verifyPaparazziDebug --no-daemon
+      - name: Editor unit tests and screenshots (Paparazzi)
+        run: ./gradlew :editor:testDebugUnitTest :editor:verifyPaparazziDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:

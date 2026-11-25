@@ -2,6 +2,8 @@ package dev.zamin.editor.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,34 +40,72 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.zamin.editor.project.AssetItem
+import dev.zamin.editor.project.AssetKind
 
 @Composable
 fun AssetsPanel(state: EditorState, modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf<String?>(null) }
     Column(modifier.background(ZaminColors.Panel)) {
         PanelHeader("Assetlar", Icons.Outlined.Folder) {
-            ToolIconButton(Icons.Outlined.FileDownload, "Import qilish", size = 28.dp) { }
+            ToolIconButton(Icons.Outlined.Save, "Sahnani saqlash", size = 28.dp) { state.saveScene() }
+            state.onImportRequest?.let { ToolIconButton(Icons.Outlined.FileDownload, "Import qilish", size = 28.dp, onClick = it) }
         }
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Assets", color = ZaminColors.TextMuted, fontSize = 12.sp)
-            Icon(Icons.Filled.ChevronRight, null, tint = ZaminColors.TextFaint, modifier = Modifier.size(14.dp))
-            Text("Asosiy", color = ZaminColors.Text, fontSize = 12.sp)
-        }
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(84.dp),
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+        // Yo'l (breadcrumb): har bir bo'lakka teginib o'sha papkaga qaytish mumkin
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(state.assets) { a ->
-                AssetTile(a, selected == a.name) { selected = a.name }
+            val parts = if (state.assetDir.isEmpty()) emptyList() else state.assetDir.split('/')
+            Crumb(state.projectName, active = parts.isEmpty()) { state.openAssetDir("") }
+            parts.forEachIndexed { i, part ->
+                Icon(Icons.Filled.ChevronRight, null, tint = ZaminColors.TextFaint, modifier = Modifier.size(14.dp))
+                Crumb(part, active = i == parts.lastIndex) { state.openAssetDir(parts.take(i + 1).joinToString("/")) }
+            }
+        }
+        if (state.assets.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    if (state.project == null) "Loyiha ochilmagan" else "Bo'sh papka",
+                    color = ZaminColors.TextFaint, fontSize = 12.sp,
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(84.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(state.assets, key = { it.path }) { a ->
+                    // Birinchi teginish — tanlash, ikkinchisi — ochish (papka yoki sahna)
+                    AssetTile(a, selected == a.path, open = a.path == state.scenePath) {
+                        if (selected == a.path || a.kind == AssetKind.Folder) {
+                            state.openAsset(a)
+                            selected = null
+                        } else {
+                            selected = a.path
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun AssetTile(asset: AssetItem, selected: Boolean, onClick: () -> Unit) {
+private fun Crumb(text: String, active: Boolean, onClick: () -> Unit) {
+    Text(
+        text,
+        color = if (active) ZaminColors.Text else ZaminColors.TextMuted,
+        fontSize = 12.sp,
+        maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(5.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 3.dp),
+    )
+}
+
+@Composable
+private fun AssetTile(asset: AssetItem, selected: Boolean, open: Boolean, onClick: () -> Unit) {
     Column(
         Modifier
             .clip(RoundedCornerShape(8.dp))
@@ -82,6 +123,13 @@ private fun AssetTile(asset: AssetItem, selected: Boolean, onClick: () -> Unit) 
             contentAlignment = Alignment.Center,
         ) {
             Icon(asset.kind.icon(), null, tint = asset.kind.tint(), modifier = Modifier.size(28.dp))
+            if (open) {
+                // Hozir ochiq sahna belgisi
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(5.dp).size(7.dp)
+                        .clip(RoundedCornerShape(4.dp)).background(ZaminColors.Accent),
+                )
+            }
         }
         Spacer(Modifier.height(5.dp))
         Text(

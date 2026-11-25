@@ -14,8 +14,8 @@ android {
         applicationId = "dev.zamin.editor"
         minSdk = 29          // Android 10+: Vulkan 1.1 kafolatlangan (64-bit qurilmalar)
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -70,4 +70,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    // Android'dagi org.json JVM unit testlarida stub — haqiqiy implementatsiya kerak
+    testImplementation("org.json:json:20240303")
 }

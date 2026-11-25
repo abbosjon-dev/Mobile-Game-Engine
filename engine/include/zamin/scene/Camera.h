@@ -13,8 +13,12 @@ struct EditorCamera {
     float pitch = 0.45f;
     float distance = 7.0f;
     bool mode2D = false;
+    // O'yin rejimi: sahnadagi kamera obyekti ko'rinishi (orbit o'rniga)
+    bool hasViewOverride = false;
+    Mat4 viewOverride = Mat4::identity();
 
     Mat4 view() const {
+        if (hasViewOverride) return viewOverride;
         if (mode2D) return translation({-target.x, -target.y, -50.0f});
         return mul(translation({0.0f, 0.0f, -distance}),
                    mul(rotationX(pitch), mul(rotationY(yaw), translation(target * -1.0f))));
@@ -26,11 +30,20 @@ struct EditorCamera {
             const float halfH = aspect >= 1.0f ? distance * 0.5f : distance * 0.5f / aspect;
             return orthographic(halfH * aspect, halfH, 0.1f, 200.0f);
         }
-        // Portret ekranda gorizontal ko'rish burchagini saqlaymiz
-        const float baseFov = 0.9f;
-        const float fovY = aspect >= 1.0f ? baseFov
-                                          : 2.0f * std::atan(std::tan(baseFov * 0.5f) / aspect);
-        return perspective(std::fmin(fovY, 1.6f), aspect, 0.05f, 300.0f);
+        return perspective(fovY(aspect), aspect, 0.05f, 300.0f);
+    }
+
+    // Vertikal ko'rish burchagi (radian). Portret ekranda gorizontal burchak saqlanadi.
+    static float fovY(float aspect) {
+        constexpr float kBaseFov = 0.9f;
+        const float f = aspect >= 1.0f ? kBaseFov
+                                       : 2.0f * std::atan(std::tan(kBaseFov * 0.5f) / aspect);
+        return std::fmin(f, 1.6f);
+    }
+
+    // 3D rejimda nishon masofasida bir piksel nechta dunyo birligiga teng
+    float worldPerPixel3D(float aspect, float heightPx) const {
+        return 2.0f * distance * std::tan(fovY(aspect) * 0.5f) / heightPx;
     }
 
     // 2D rejimda bir piksel nechta dunyo birligiga teng

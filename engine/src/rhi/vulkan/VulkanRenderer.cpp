@@ -134,6 +134,52 @@ void buildQuad(std::vector<Vertex>& v) {
     addQuad(v, {-h, -h, 0}, {h, -h, 0}, {h, h, 0}, {-h, h, 0});
 }
 
+// Markazi c, yarim o'lchamlari e bo'lgan quti
+void addBox(std::vector<Vertex>& v, Vec3 c, Vec3 e) {
+    const Vec3 p[8] = {{c.x - e.x, c.y - e.y, c.z - e.z}, {c.x + e.x, c.y - e.y, c.z - e.z},
+                       {c.x + e.x, c.y + e.y, c.z - e.z}, {c.x - e.x, c.y + e.y, c.z - e.z},
+                       {c.x - e.x, c.y - e.y, c.z + e.z}, {c.x + e.x, c.y - e.y, c.z + e.z},
+                       {c.x + e.x, c.y + e.y, c.z + e.z}, {c.x - e.x, c.y + e.y, c.z + e.z}};
+    addQuad(v, p[4], p[5], p[6], p[7]);
+    addQuad(v, p[1], p[0], p[3], p[2]);
+    addQuad(v, p[5], p[1], p[2], p[6]);
+    addQuad(v, p[0], p[4], p[7], p[3]);
+    addQuad(v, p[7], p[6], p[2], p[3]);
+    addQuad(v, p[0], p[1], p[5], p[4]);
+}
+
+// ---- Editor gizmo belgilari (lokal [-0.5, 0.5] ichida) ----
+// Yorug'lik: olmos (oktaedr) va +Z yo'nalishidagi tayoqcha (nur yo'nalishi)
+void buildGizmoLight(std::vector<Vertex>& v) {
+    const float r = 0.28f;
+    const Vec3 px{r, 0, 0}, nx{-r, 0, 0}, py{0, r, 0}, ny{0, -r, 0}, pz{0, 0, r}, nz{0, 0, -r};
+    addTri(v, py, pz, px); addTri(v, py, px, nz); addTri(v, py, nz, nx); addTri(v, py, nx, pz);
+    addTri(v, ny, px, pz); addTri(v, ny, nz, px); addTri(v, ny, nx, nz); addTri(v, ny, pz, nx);
+    addBox(v, {0, 0, 0.36f}, {0.035f, 0.035f, 0.14f});
+}
+
+// Kamera: korpus va +Z ga qaragan obyektiv (kesik piramida)
+void buildGizmoCamera(std::vector<Vertex>& v) {
+    addBox(v, {0, 0, -0.12f}, {0.2f, 0.16f, 0.24f});
+    addBox(v, {0, 0.22f, -0.2f}, {0.06f, 0.06f, 0.06f}); // vizir
+    const float z0 = 0.12f, z1 = 0.46f, a = 0.08f, b = 0.22f;
+    const Vec3 n0{-a, -a, z0}, n1{a, -a, z0}, n2{a, a, z0}, n3{-a, a, z0};
+    const Vec3 f0{-b, -b, z1}, f1{b, -b, z1}, f2{b, b, z1}, f3{-b, b, z1};
+    addQuad(v, n0, n1, f1, f0);
+    addQuad(v, n1, n2, f2, f1);
+    addQuad(v, n2, n3, f3, f2);
+    addQuad(v, n3, n0, f0, f3);
+    addQuad(v, f0, f1, f2, f3);
+}
+
+// Bo'sh obyekt: uch o'qli xoch
+void buildGizmoEmpty(std::vector<Vertex>& v) {
+    const float l = 0.42f, t = 0.03f;
+    addBox(v, {0, 0, 0}, {l, t, t});
+    addBox(v, {0, 0, 0}, {t, l, t});
+    addBox(v, {0, 0, 0}, {t, t, l});
+}
+
 class VulkanRenderer final : public Renderer {
 public:
     VulkanRenderer() = default;
@@ -229,6 +275,7 @@ public:
     }
 
     const char* deviceName() const override { return m_deviceName; }
+    uint32_t drawCalls() const override { return m_drawCalls; }
 
     // Ekransiz (offscreen) chizish: skrinshot va testlar uchun.
     // Natija: RGBA8 (sRGB) piksellar, yuqori-chapdan boshlab.
@@ -697,6 +744,9 @@ private:
         add(MeshKind::Pyramid, buildPyramid);
         add(MeshKind::Plane, buildPlane);
         add(MeshKind::Quad, buildQuad);
+        add(MeshKind::GizmoLight, buildGizmoLight);
+        add(MeshKind::GizmoCamera, buildGizmoCamera);
+        add(MeshKind::GizmoEmpty, buildGizmoEmpty);
 
         const VkDeviceSize bytes = verts.size() * sizeof(Vertex);
         VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -867,7 +917,9 @@ private:
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &m_vertexBuffer, &offset);
 
+        uint32_t draws = 0;
         auto drawItem = [&](const DrawItem& it, bool outline) {
+            if (it.mesh >= MeshKind::InternalCount) return;
             const MeshRange& range = m_meshes[size_t(it.mesh)];
             if (range.count == 0) return;
             PushConstants pc{};
@@ -894,10 +946,12 @@ private:
                 for (int r = 0; r < 3; ++r) col[r] = inv.m[r * 4 + c];
             }
             pc.n0[3] = srgbFlag;
-            // 2D sprite'lar yoritilmaydi (rang aynan ko'rinadi)
-            pc.n1[3] = (outline || it.mesh == MeshKind::Quad) ? 1.0f : 0.0f;
+            // 2D sprite'lar va gizmo belgilari yoritilmaydi (rang aynan ko'rinadi)
+            const bool unlit = outline || it.mesh == MeshKind::Quad || it.mesh >= MeshKind::Count;
+            pc.n1[3] = unlit ? 1.0f : 0.0f;
             vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
             vkCmdDraw(cmd, range.count, 1, range.first, 0);
+            ++draws;
         };
 
         // 1) Oddiy obyektlar; tanlangan obyekt oxirida — avval uning chegarasi
@@ -920,7 +974,9 @@ private:
             pc.n2[3] = p.camera.mode2D ? 1.0f : 0.0f;
             vkCmdPushConstants(cmd, m_pipelineLayout, stages, 0, sizeof(pc), &pc);
             vkCmdDraw(cmd, 6, 1, 0, 0);
+            ++draws;
         }
+        m_drawCalls = draws;
 
         vkCmdEndRenderPass(cmd);
         if (end) vkEndCommandBuffer(cmd);
@@ -1009,7 +1065,8 @@ private:
         uint32_t first = 0;
         uint32_t count = 0;
     };
-    std::array<MeshRange, size_t(MeshKind::Count)> m_meshes{};
+    std::array<MeshRange, size_t(MeshKind::InternalCount)> m_meshes{};
+    uint32_t m_drawCalls = 0;
     VkBuffer m_vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_vertexMemory = VK_NULL_HANDLE;
 

@@ -4,7 +4,9 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 #include <zlib.h>
@@ -71,16 +73,18 @@ bool writePng(const char* path, uint32_t w, uint32_t h, const std::vector<uint8_
 }
 
 
-// Editor'dagi standart sahna bilan bir xil (EditorState.kt)
+// Editor'dagi standart sahna bilan bir xil (EditorState.kt: defaultSceneObjects)
 void buildDemoScene(zamin::Scene& scene) {
     using zamin::EntityDesc;
+    using zamin::GizmoKind;
     using zamin::MeshKind;
-    auto add = [&](uint32_t id, uint32_t parent, MeshKind mesh, zamin::Vec3 pos, zamin::Vec3 rot,
-                   zamin::Vec3 scale, uint32_t rgb) {
+    auto add = [&](uint32_t id, uint32_t parent, MeshKind mesh, GizmoKind gizmo, zamin::Vec3 pos,
+                   zamin::Vec3 rot, zamin::Vec3 scale, uint32_t rgb) {
         EntityDesc e;
         e.id = id;
         e.parent = parent;
         e.mesh = mesh;
+        e.gizmo = gizmo;
         e.position = pos;
         e.rotation = rot;
         e.scale = scale;
@@ -89,46 +93,86 @@ void buildDemoScene(zamin::Scene& scene) {
         e.color[2] = (rgb & 0xFF) / 255.0f;
         scene.upsert(e);
     };
-    add(1, 0, MeshKind::None, {}, {}, {1, 1, 1}, 0xFFFFFF);
-    add(2, 1, MeshKind::None, {0, 1.6f, -6}, {}, {1, 1, 1}, 0xFFFFFF);
-    add(3, 1, MeshKind::None, {0, 8, 0}, {50, -30, 0}, {1, 1, 1}, 0xFFFFFF);
-    add(4, 1, MeshKind::Pyramid, {0, 0.5f, 0}, {}, {1, 1, 1}, 0x3DB98A);
-    add(5, 1, MeshKind::Cube, {-1.8f, 0.5f, 0.8f}, {0, 25, 0}, {1, 1, 1}, 0xF2A33C);
-    add(6, 1, MeshKind::Sphere, {1.7f, 0.5f, -0.6f}, {}, {1, 1, 1}, 0x4D8CF2);
-    add(7, 1, MeshKind::Plane, {0, 0, 0}, {}, {10, 1, 10}, 0x3F4A45);
-    add(8, 1, MeshKind::None, {1.2f, 0, 2}, {}, {1, 1, 1}, 0xFFFFFF);
-    add(9, 8, MeshKind::Quad, {0, 0.75f, 0}, {}, {1, 1.5f, 1}, 0xE8604C);
+    add(1, 0, MeshKind::None, GizmoKind::None, {}, {}, {1, 1, 1}, 0xFFFFFF);
+    add(2, 1, MeshKind::None, GizmoKind::Camera, {0, 2.2f, 6.5f}, {12, 180, 0}, {1, 1, 1}, 0xFFFFFF);
+    add(3, 1, MeshKind::None, GizmoKind::Light, {-2.6f, 3.2f, -1.2f}, {50, 30, 0}, {1, 1, 1}, 0xFFFFFF);
+    add(4, 1, MeshKind::Pyramid, GizmoKind::Empty, {0, 0.5f, 0}, {}, {1, 1, 1}, 0x3DB98A);
+    add(5, 1, MeshKind::Cube, GizmoKind::Empty, {-1.8f, 0.5f, 0.8f}, {0, 25, 0}, {1, 1, 1}, 0xF2A33C);
+    add(6, 1, MeshKind::Sphere, GizmoKind::Empty, {1.7f, 0.5f, -0.6f}, {}, {1, 1, 1}, 0x4D8CF2);
+    add(7, 1, MeshKind::Plane, GizmoKind::Empty, {0, 0, 0}, {}, {10, 1, 10}, 0x3F4A45);
+    add(8, 1, MeshKind::None, GizmoKind::Empty, {1.2f, 0, 2}, {}, {1, 1, 1}, 0xFFFFFF);
+    add(9, 8, MeshKind::Quad, GizmoKind::Empty, {0, 0.75f, 0}, {}, {1, 1.5f, 1}, 0xE8604C);
 }
 
 } // namespace
 
+// Stsenariylar:
+//   editor  — editor ko'rinishi, piramida tanlangan, gizmolar ko'rinadi (standart)
+//   light   — yorug'lik gizmosi tanlangan, kamera va boshqa gizmolar ham ko'rinadi
+//   rotated — kub dunyo fazosida ikki o'q bo'yicha burilgan (Rotate asbobi natijasi)
+//   play    — o'yin rejimi: "Asosiy kamera" ko'rinishi, to'r/gizmo/tanlov yo'q
+//   2d      — ortografik 2D ko'rinish
 int main(int argc, char** argv) {
     if (argc < 4) {
-        std::fprintf(stderr,
-                     "Ishlatish: %s <out.png> <width> <height> [yaw] [pitch] [tanlangan_id] [2d]\n",
-                     argv[0]);
+        std::fprintf(stderr, "Ishlatish: %s <out.png> <width> <height> [editor|light|rotated|play|2d]\n", argv[0]);
         return 2;
     }
     const uint32_t w = std::atoi(argv[2]);
     const uint32_t h = std::atoi(argv[3]);
-    zamin::rhi::FrameParams params;
-    params.camera.yaw = argc > 4 ? std::atof(argv[4]) : 0.6f;
-    params.camera.pitch = argc > 5 ? std::atof(argv[5]) : 0.42f;
-    const uint32_t selected = argc > 6 ? std::atoi(argv[6]) : 4;
-    params.camera.mode2D = argc > 7 && std::atoi(argv[7]) != 0;
-    if (params.camera.mode2D) params.camera.target = {0.0f, 0.5f, 0.0f};
+    const std::string scenario = argc > 4 ? argv[4] : "editor";
 
+    zamin::rhi::FrameParams params;
+    params.camera.yaw = 0.6f;
+    params.camera.pitch = 0.42f;
     zamin::Scene scene;
     buildDemoScene(scene);
-    scene.buildDrawList(params.items, selected);
+    zamin::DrawOptions opt;
+    opt.selectedId = 4;
+    auto gizmoSize = [&] { scene.setGizmoSize(std::fmax(0.25f, std::fmin(4.0f, params.camera.distance * 0.09f))); };
+
+    if (scenario == "light") {
+        opt.selectedId = 3;
+        // Uzoqroqdan: yorug'lik, kamera va bo'sh obyekt belgilari birga ko'rinadi
+        params.camera.target = {-0.4f, 1.0f, 2.2f};
+        params.camera.yaw = -1.05f;
+        params.camera.pitch = 0.38f;
+        params.camera.distance = 11.0f;
+    } else if (scenario == "rotated") {
+        opt.selectedId = 5;
+        // Rotate asbobi: gorizontal 60 px va vertikal 90 px surish (Engine::rotateEntity bilan bir xil)
+        const float k = 0.01f;
+        const zamin::Vec3 right{std::cos(params.camera.yaw), 0.0f, std::sin(params.camera.yaw)};
+        scene.rotateWorld(5, zamin::mul(zamin::rotationAxis(right, 90 * k), zamin::rotationY(60 * k)));
+        const zamin::Vec3 r = scene.find(5)->rotation;
+        ZAMIN_LOGI("Kub aylanishi: (%.1f, %.1f, %.1f)", r.x, r.y, r.z);
+    } else if (scenario == "play") {
+        opt.selectedId = 0;
+        opt.gizmos = false;
+        params.showGrid = false;
+        zamin::Mat4 view;
+        if (scene.cameraView(scene.mainCamera(), view)) {
+            params.camera.hasViewOverride = true;
+            params.camera.viewOverride = view;
+        }
+    } else if (scenario == "2d") {
+        params.camera.mode2D = true;
+        params.camera.target = {0.0f, 0.5f, 0.0f};
+        opt.selectedId = 9;
+    } else if (scenario != "editor") {
+        std::fprintf(stderr, "Noma'lum stsenariy: %s\n", scenario.c_str());
+        return 2;
+    }
+
+    gizmoSize();
+    scene.buildDrawList(params.items, opt);
     auto renderer = zamin::rhi::createVulkanRenderer();
     std::vector<uint8_t> pixels;
     if (!renderer->renderOffscreen(w, h, params, pixels)) {
         ZAMIN_LOGE("Offscreen chizish muvaffaqiyatsiz");
         return 1;
     }
-    ZAMIN_LOGI("GPU: %s", renderer->deviceName());
+    ZAMIN_LOGI("GPU: %s, draw call: %u", renderer->deviceName(), renderer->drawCalls());
     if (!writePng(argv[1], w, h, pixels)) return 1;
-    ZAMIN_LOGI("Yozildi: %s (%ux%u)", argv[1], w, h);
+    ZAMIN_LOGI("Yozildi: %s (%ux%u, %s)", argv[1], w, h, scenario.c_str());
     return 0;
 }

@@ -7,6 +7,13 @@
 
 namespace zamin {
 
+namespace {
+// Gizmo belgilari ekranda taxminan bir xil o'lchamda ko'rinadi
+float gizmoSizeFor(const EditorCamera& cam) {
+    return std::fmax(0.25f, std::fmin(4.0f, cam.distance * 0.09f));
+}
+} // namespace
+
 Engine::Engine() = default;
 
 Engine::~Engine() { stop(); }
@@ -56,6 +63,7 @@ void Engine::setPaused(bool paused) {
 
 void Engine::onDrag(float dx, float dy) {
     std::lock_guard lock(m_mutex);
+    if (m_playing) return;
     if (m_camera.mode2D) {
         const float aspect = m_height ? float(m_width) / float(m_height) : 1.0f;
         const float wpp = m_camera.worldPerPixel2D(aspect, m_height ? float(m_height) : 1.0f);
@@ -71,6 +79,7 @@ void Engine::onDrag(float dx, float dy) {
 
 void Engine::onPan(float dx, float dy) {
     std::lock_guard lock(m_mutex);
+    if (m_playing) return;
     const float h = m_height ? float(m_height) : 1.0f;
     const float aspect = m_height ? float(m_width) / h : 1.0f;
     if (m_camera.mode2D) {
@@ -79,8 +88,9 @@ void Engine::onPan(float dx, float dy) {
         m_camera.target.y += dy * wpp;
         return;
     }
-    // Kamera tekisligida surish: o'ng va yuqori vektorlar
-    const float wpp = 2.0f * m_camera.distance * std::tan(0.45f) / h;
+    // Kamera tekisligida surish: o'ng va yuqori vektorlar.
+    // Piksel o'lchami proyeksiya bilan bir xil fovY dan olinadi (portret ekranda ham to'g'ri).
+    const float wpp = m_camera.worldPerPixel3D(aspect, h);
     const float cy = std::cos(m_camera.yaw), sy = std::sin(m_camera.yaw);
     const float cp = std::cos(m_camera.pitch), sp = std::sin(m_camera.pitch);
     const Vec3 right{cy, 0.0f, sy};
@@ -90,7 +100,7 @@ void Engine::onPan(float dx, float dy) {
 
 void Engine::onZoom(float factor) {
     std::lock_guard lock(m_mutex);
-    if (factor <= 0.0f) return;
+    if (m_playing || factor <= 0.0f) return;
     m_camera.distance = std::fmax(0.8f, std::fmin(80.0f, m_camera.distance / factor));
 }
 
@@ -136,7 +146,8 @@ uint32_t Engine::pick(float x, float y) {
     std::lock_guard lock(m_mutex);
     Vec3 o, d;
     if (!m_camera.screenRay(x, y, float(m_width), float(m_height), o, d)) return 0;
-    return m_scene.pick(o, d);
+    m_scene.setGizmoSize(gizmoSizeFor(m_camera));
+    return m_scene.pick(o, d, /*gizmos=*/!m_playing);
 }
 
 namespace {
@@ -168,6 +179,29 @@ bool Engine::dragEntity(uint32_t id, float x0, float y0, float x1, float y1, Vec
     if (!m_scene.translateWorld(id, delta)) return false;
     outLocalPos = m_scene.find(id)->position;
     return true;
+}
+
+bool Engine::rotateEntity(uint32_t id, float dx, float dy, Vec3& outLocalEuler) {
+    std::lock_guard lock(m_mutex);
+    if (!m_scene.find(id)) return false;
+    constexpr float kRadPerPixel = 0.01f;
+    Mat4 r;
+    if (m_camera.mode2D) {
+        // Ekran tekisligida: o'ngga surish — soat yo'nalishida
+        r = rotationZ(-(dx - dy) * kRadPerPixel);
+    } else {
+        const float cy = std::cos(m_camera.yaw), sy = std::sin(m_camera.yaw);
+        const Vec3 right{cy, 0.0f, sy};
+        r = mul(rotationAxis(right, dy * kRadPerPixel), rotationY(dx * kRadPerPixel));
+    }
+    if (!m_scene.rotateWorld(id, r)) return false;
+    outLocalEuler = m_scene.find(id)->rotation;
+    return true;
+}
+
+void Engine::setPlaying(bool playing) {
+    std::lock_guard lock(m_mutex);
+    m_playing = playing;
 }
 
 EngineStats Engine::stats() const {
@@ -213,20 +247,35 @@ void Engine::renderLoop() {
 
             m_timer.tick();
             params.camera = m_camera;
-            m_scene.buildDrawList(m_drawList, m_selected);
-            params.items = m_drawList;
+            DrawOptions opt;
+            opt.selectedId = m_playing ? 0 : m_selected;
+            opt.gizmos = !m_playing;
+            m_scene.setGizmoSize(gizmoSizeFor(m_camera));
+            m_scene.buildDrawList(m_drawList, opt);
+            // Bufer sig'imini saqlash uchun nusxa o'rniga almashtiramiz
+            params.items.swap(m_drawList);
+            params.showGrid = !m_playing;
+            if (m_playing) {
+                Mat4 view;
+                const uint32_t cam = m_scene.mainCamera();
+                if (cam && m_scene.cameraView(cam, view)) {
+                    params.camera.hasViewOverride = true;
+                    params.camera.viewOverride = view;
+                }
+            }
             params.time = static_cast<float>(m_timer.totalSeconds());
         }
 
         m_renderer->renderFrame(params);
 
         std::lock_guard lock(m_mutex);
+        m_drawList.swap(params.items);
         m_stats.fps = m_timer.fps();
         m_stats.frameMs = m_timer.deltaSeconds() * 1000.0f;
         m_stats.frames = m_timer.frameIndex();
         m_stats.cameraYaw = m_camera.mode2D ? 0.0f : m_camera.yaw;
         m_stats.cameraPitch = m_camera.mode2D ? 0.0f : m_camera.pitch;
-        m_stats.drawCalls = static_cast<uint32_t>(params.items.size()) + 1;
+        m_stats.drawCalls = m_renderer->drawCalls();
     }
 
     if (m_hasWindow) m_renderer->detachWindow();

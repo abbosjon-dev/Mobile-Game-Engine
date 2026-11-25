@@ -18,6 +18,8 @@ import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -50,7 +52,22 @@ fun BoxScope.ViewportOverlay(state: EditorState, stats: EngineStats, gpuName: St
         OverlayChip("Yoritilgan", Icons.Outlined.LightMode)
         OverlayChip("To'r", Icons.Outlined.GridOn)
     }
-    if (state.is3D) {
+    state.message?.let { msg ->
+        LaunchedEffect(msg) {
+            delay(2500)
+            if (state.message == msg) state.message = null
+        }
+        Box(
+            // Yuqorida, rejim chiplari ostida (pastda FPS paneli bilan to'qnashmasin)
+            Modifier.align(Alignment.TopCenter).padding(top = if (playing) 84.dp else 50.dp)
+                .background(Color(0xE616191E), RoundedCornerShape(8.dp))
+                .border(1.dp, ZaminColors.Border, RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text(msg, color = ZaminColors.Text, fontSize = 12.sp)
+        }
+    }
+    if (state.is3D && !playing) {
         AxisGizmo(stats.cameraYaw, stats.cameraPitch, Modifier.align(Alignment.TopEnd).padding(8.dp).size(84.dp))
     }
     if (playing) {

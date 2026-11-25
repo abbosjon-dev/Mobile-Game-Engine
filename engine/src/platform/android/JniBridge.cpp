@@ -106,8 +106,8 @@ Java_dev_zamin_editor_ZaminNative_nativeFocus(JNIEnv*, jclass, jlong handle, jin
 // data: [px py pz, rx ry rz, sx sy sz, r g b a]
 JNIEXPORT void JNICALL
 Java_dev_zamin_editor_ZaminNative_nativeUpsertEntity(JNIEnv* env, jclass, jlong handle, jint id,
-                                                     jint parent, jint mesh, jboolean visible,
-                                                     jfloatArray data) {
+                                                     jint parent, jint mesh, jint gizmo,
+                                                     jboolean visible, jfloatArray data) {
     auto* state = fromHandle(handle);
     if (!state || !data || env->GetArrayLength(data) < 13) return;
     jfloat d[13];
@@ -118,6 +118,9 @@ Java_dev_zamin_editor_ZaminNative_nativeUpsertEntity(JNIEnv* env, jclass, jlong 
     e.mesh = mesh >= 0 && mesh < static_cast<jint>(zamin::MeshKind::Count)
                  ? static_cast<zamin::MeshKind>(mesh)
                  : zamin::MeshKind::None;
+    e.gizmo = gizmo >= 0 && gizmo < static_cast<jint>(zamin::GizmoKind::Count)
+                  ? static_cast<zamin::GizmoKind>(gizmo)
+                  : zamin::GizmoKind::None;
     e.visible = visible;
     e.position = {d[0], d[1], d[2]};
     e.rotation = {d[3], d[4], d[5]};
@@ -156,6 +159,26 @@ Java_dev_zamin_editor_ZaminNative_nativeDragEntity(JNIEnv* env, jclass, jlong ha
     const jfloat values[3] = {pos.x, pos.y, pos.z};
     env->SetFloatArrayRegion(arr, 0, 3, values);
     return arr;
+}
+
+// Muvaffaqiyatli bo'lsa yangi lokal Euler burchaklar [x, y, z] (gradus), aks holda null
+JNIEXPORT jfloatArray JNICALL
+Java_dev_zamin_editor_ZaminNative_nativeRotateEntity(JNIEnv* env, jclass, jlong handle, jint id,
+                                                     jfloat dx, jfloat dy) {
+    auto* state = fromHandle(handle);
+    zamin::Vec3 rot;
+    if (!state || !state->engine->rotateEntity(static_cast<uint32_t>(id), dx, dy, rot))
+        return nullptr;
+    jfloatArray arr = env->NewFloatArray(3);
+    const jfloat values[3] = {rot.x, rot.y, rot.z};
+    env->SetFloatArrayRegion(arr, 0, 3, values);
+    return arr;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_zamin_editor_ZaminNative_nativeSetPlaying(JNIEnv*, jclass, jlong handle, jboolean playing) {
+    auto* state = fromHandle(handle);
+    if (state) state->engine->setPlaying(playing);
 }
 
 JNIEXPORT jfloatArray JNICALL

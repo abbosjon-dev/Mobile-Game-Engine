@@ -68,7 +68,7 @@ private fun ProjectTitle(state: EditorState, compact: Boolean) {
         Spacer(Modifier.width(9.dp))
         Column {
             Text(state.projectName, color = ZaminColors.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            if (!compact) Text("Asosiy sahna", color = ZaminColors.TextFaint, fontSize = 10.sp)
+            if (!compact) Text(state.scenePath.substringAfterLast('/'), color = ZaminColors.TextFaint, fontSize = 10.sp)
         }
         Icon(Icons.Filled.ExpandMore, null, tint = ZaminColors.TextFaint, modifier = Modifier.size(16.dp))
     }
@@ -83,17 +83,11 @@ fun PlayControls(state: EditorState) {
             if (playing) "To'xtatish" else "O'ynash",
             selected = playing,
             tint = ZaminColors.Accent,
-        ) { state.playState = if (playing) PlayState.Edit else PlayState.Playing }
+        ) { if (playing) state.stop() else state.play() }
         ToolIconButton(
             Icons.Filled.Pause, "Pauza",
             selected = state.playState == PlayState.Paused,
-        ) {
-            state.playState = when (state.playState) {
-                PlayState.Playing -> PlayState.Paused
-                PlayState.Paused -> PlayState.Playing
-                PlayState.Edit -> PlayState.Edit
-            }
-        }
+        ) { state.togglePause() }
         ToolIconButton(Icons.Filled.SkipNext, "Bir kadr") { }
     }
 }

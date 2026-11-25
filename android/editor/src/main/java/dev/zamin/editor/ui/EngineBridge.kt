@@ -23,7 +23,7 @@ fun EngineSceneSync(state: EditorState, engine: EngineHost) {
             }
             for (s in list) {
                 if (sent[s.id] != s) {
-                    engine.upsertEntity(s.id, s.parent, s.mesh.ordinal, s.visible, s.data())
+                    engine.upsertEntity(s.id, s.parent, s.mesh.ordinal, s.gizmo.ordinal, s.visible, s.data())
                     sent[s.id] = s
                 }
             }
@@ -34,6 +34,9 @@ fun EngineSceneSync(state: EditorState, engine: EngineHost) {
     }
     LaunchedEffect(state, engine) {
         snapshotFlow { state.is3D }.collect { engine.setMode2D(!it) }
+    }
+    LaunchedEffect(state, engine) {
+        snapshotFlow { state.playState != PlayState.Edit }.collect { engine.setPlaying(it) }
     }
     LaunchedEffect(state, engine) {
         snapshotFlow { state.focusRequest }.collect { if (it > 0) state.selectedId?.let(engine::focus) }
@@ -65,9 +68,14 @@ class ViewportGestures(private val engine: EngineHost, private val state: Editor
     fun onDown(x: Float, y: Float, timeMs: Long) {
         downX = x; downY = y; lastX = x; lastY = y; downTime = timeMs
         moved = false
+        // O'yin rejimida viewport o'yinga tegishli: editor kamerasi va tanlov ishlamaydi
+        if (state.playState != PlayState.Edit) {
+            hitId = 0
+            mode = Mode.None
+            return
+        }
         hitId = engine.pick(x, y)
-        val editing = state.playState == PlayState.Edit
-        mode = if (editing && state.tool != Tool.Hand && hitId != 0 && hitId == state.selectedId) {
+        mode = if (state.tool != Tool.Hand && hitId != 0 && hitId == state.selectedId) {
             Mode.Manipulate
         } else {
             Mode.Camera
@@ -98,7 +106,7 @@ class ViewportGestures(private val engine: EngineHost, private val state: Editor
     fun onZoom(factor: Float) = engine.zoom(factor)
 
     fun onUp(timeMs: Long) {
-        val wasTap = mode != Mode.MultiTouch && !moved && timeMs - downTime < 400
+        val wasTap = mode != Mode.None && mode != Mode.MultiTouch && !moved && timeMs - downTime < 400
         mode = Mode.None
         if (!wasTap) return
         val doubleTap = hitId != 0 && hitId == lastTapId && timeMs - lastTapTime < 350
@@ -114,9 +122,10 @@ class ViewportGestures(private val engine: EngineHost, private val state: Editor
             Tool.Move -> engine.dragEntity(obj.id, lastX, lastY, x, y)?.let {
                 obj.position = Vec3(it[0], it[1], it[2])
             }
-            Tool.Rotate -> {
-                val r = obj.rotation
-                obj.rotation = if (state.is3D) r.copy(y = wrap(r.y + dx * 0.5f)) else r.copy(z = wrap(r.z - dx * 0.5f))
+            // Gorizontal surish — vertikal o'q atrofida, vertikal surish — kameraning o'ng o'qi
+            // atrofida (3D); 2D da ekran tekisligida. Hisob engine'da (dunyo fazosida).
+            Tool.Rotate -> engine.rotateEntity(obj.id, dx, dy)?.let {
+                obj.rotation = Vec3(it[0], it[1], it[2])
             }
             Tool.Scale -> {
                 val f = exp((dx - dy) * 0.005f)
@@ -125,12 +134,5 @@ class ViewportGestures(private val engine: EngineHost, private val state: Editor
             }
             Tool.Hand -> engine.orbit(dx, dy)
         }
-    }
-
-    private fun wrap(deg: Float): Float {
-        var d = deg % 360f
-        if (d > 180f) d -= 360f
-        if (d < -180f) d += 360f
-        return d
     }
 }

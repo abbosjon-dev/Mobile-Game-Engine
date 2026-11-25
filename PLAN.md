@@ -37,7 +37,7 @@
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **Engine core C++ da** — tezlik, Vulkan/GLES ga to'g'ridan-to'g'ri kirish, kelajakda iOS/desktop'ga ko'chirish oson.
+- **Engine core C++ da** — tezlik, Vulkan'ga to'g'ridan-to'g'ri kirish, kelajakda iOS/desktop'ga ko'chirish oson.
 - **Editor UI Kotlin/Compose da** — sensorli boshqaruv, panellar, klaviaturasiz ishlash uchun Android'ning tayyor UI tizimi eng qulay. Viewport esa `SurfaceView` ichida native engine tomonidan chiziladi.
 
 ### 1.2 Eng muhim qaror: qurilmada "build" qanday ishlaydi
@@ -84,7 +84,7 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 
 **Engine core**
 - `core` — xotira, logging, fayl tizimi (SAF/Android assets), vaqt, job system (ko'p yadroli)
-- `rhi` — Vulkan/GLES abstraksiya
+- `rhi` — grafik API abstraksiyasi (hozir faqat Vulkan)
 - `renderer` — 2D sprite batcher, 3D forward+ PBR, soyalar (CSM), post-process (bloom, tonemap, FXAA), sky
 - `scene` — ECS, transform ierarxiyasi, prefablar, sahna yuklash/saqlash
 - `physics2d`, `physics3d`
@@ -128,7 +128,7 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 
 ### Bosqich 1 — Sahna + 2D/3D asoslari (8–10 hafta)
 - [x] Sahna + Transform ierarxiyasi (ota-bola), ichki meshlar: kub, sfera, piramida, tekislik, sprite kvadrat
-- [ ] Sahna saqlash/yuklash (JSON)
+- [x] Sahna saqlash/yuklash (JSON, `.scene`), loyiha papkasi va Assetlar paneli (haqiqiy fayllar, SAF import)
 - [x] Kamera 2D (ortografik) va 3D (perspektiv orbit), viewport'da tanlash (raycast) va tanlangan obyekt chegarasi
 - [ ] Sprite renderer (tekstura, batching, atlas), mesh renderer (glTF)
 - [x] Viewport touch: teginib tanlash, surib ko'chirish/aylantirish/masshtab, ikki barmoq pan/zoom, ikki marta teginib fokus
@@ -136,8 +136,11 @@ Telefonda C++ kompilyatsiya qilish va Gradle ishga tushirish amalda imkonsiz/jud
 - [ ] Box2D (2D) va Jolt (3D) fizika integratsiyasi
 - [ ] Luau skript: `onStart`, `onUpdate`, `onCollision` + asosiy API
 - [x] Editor: ierarxiya va inspector engine sahnasi bilan sinxron (qo'shish, nusxa, o'chirish, transform, mesh, rang)
-- [ ] Viewport gizmo (o'q strelkalari), asset import (PNG, OGG)
-- [ ] Play mode (editor ichida test)
+- [x] Yorug'lik/kamera/bo'sh obyekt belgilari (gizmo) viewport'da, teginib tanlash mumkin
+- [x] Aylantirish asbobi ikki o'q bo'yicha (dunyo fazosida)
+- [ ] Viewport gizmo (o'q strelkalari), asset import formatlari (PNG dekodlash, OGG)
+- [x] Play mode asosi: sahna holatini saqlash/tiklash, o'yin kamerasidan ko'rinish
+- [ ] Play mode'da skript/fizika simulyatsiyasi
 - [ ] Audio
 - **Natija:** telefonda oddiy 2D yoki 3D o'yin yaratib, editor ichida o'ynash mumkin
 
@@ -209,7 +212,7 @@ Mobile-Game-Engine/
 
 | Xavf | Yechim |
 |---|---|
-| Qurilmalar xilma-xilligi (GPU drayver xatolari) | Vulkan + GLES zaxira, minimal API 26 (Android 8), turli qurilmalarda test |
+| Qurilmalar xilma-xilligi (GPU drayver xatolari) | Faqat Vulkan 1.1, minimal API 29 (Android 10) — eski/zaif qurilmalar qasddan qo'llab-quvvatlanmaydi; turli GPU'larda (Adreno, Mali, PowerVR) test, drayver xatolari uchun workaround ro'yxati |
 | Kichik ekranda murakkab editor | Planshetga moslashuvchan layout, telefonda tab/drawer panellar, gesture'lar |
 | Ishlash tezligi (editor + o'yin bir vaqtda) | Play mode'da editor panellari to'xtatiladi, job system |
 | Katta loyihalar xotirasi | Asset streaming, GUID asosida lazy-load |

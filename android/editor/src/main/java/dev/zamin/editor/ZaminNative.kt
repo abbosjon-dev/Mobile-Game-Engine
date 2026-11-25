@@ -19,11 +19,13 @@ internal object ZaminNative {
     @JvmStatic external fun nativeOnZoom(handle: Long, factor: Float)
     @JvmStatic external fun nativeSetMode2D(handle: Long, mode2D: Boolean)
     @JvmStatic external fun nativeFocus(handle: Long, id: Int)
-    @JvmStatic external fun nativeUpsertEntity(handle: Long, id: Int, parent: Int, mesh: Int, visible: Boolean, data: FloatArray)
+    @JvmStatic external fun nativeUpsertEntity(handle: Long, id: Int, parent: Int, mesh: Int, gizmo: Int, visible: Boolean, data: FloatArray)
     @JvmStatic external fun nativeRemoveEntity(handle: Long, id: Int)
     @JvmStatic external fun nativeSetSelected(handle: Long, id: Int)
     @JvmStatic external fun nativePick(handle: Long, x: Float, y: Float): Int
     @JvmStatic external fun nativeDragEntity(handle: Long, id: Int, x0: Float, y0: Float, x1: Float, y1: Float): FloatArray?
+    @JvmStatic external fun nativeRotateEntity(handle: Long, id: Int, dx: Float, dy: Float): FloatArray?
+    @JvmStatic external fun nativeSetPlaying(handle: Long, playing: Boolean)
     @JvmStatic external fun nativeGetStats(handle: Long): FloatArray
     @JvmStatic external fun nativeGetDeviceName(handle: Long): String
 }
@@ -53,14 +55,19 @@ interface EngineHost {
     fun focus(id: Int) {}
 
     // ---- Sahna ----
-    /** data: [px py pz, rx ry rz, sx sy sz, r g b a] */
-    fun upsertEntity(id: Int, parent: Int, mesh: Int, visible: Boolean, data: FloatArray) {}
+    /** gizmo: meshsiz obyekt belgisi (Gizmo.ordinal). data: [px py pz, rx ry rz, sx sy sz, r g b a] */
+    fun upsertEntity(id: Int, parent: Int, mesh: Int, gizmo: Int, visible: Boolean, data: FloatArray) {}
     fun removeEntity(id: Int) {}
     fun setSelected(id: Int) {}
     /** Ekran nuqtasidagi obyekt id si (0 — hech narsa). */
     fun pick(x: Float, y: Float): Int = 0
     /** Obyektni barmoq ortidan siljitadi; yangi lokal pozitsiya yoki null. */
     fun dragEntity(id: Int, x0: Float, y0: Float, x1: Float, y1: Float): FloatArray? = null
+    /** Obyektni barmoq siljishi bilan aylantiradi; yangi lokal Euler burchaklar yoki null. */
+    fun rotateEntity(id: Int, dx: Float, dy: Float): FloatArray? = null
+
+    // ---- O'yin rejimi ----
+    fun setPlaying(playing: Boolean) {}
 }
 
 /** Engine nusxasi uchun Kotlin o'rami. */
@@ -78,13 +85,16 @@ class ZaminEngine : EngineHost, AutoCloseable {
     override fun setMode2D(mode2D: Boolean) = ifAlive { ZaminNative.nativeSetMode2D(it, mode2D) }
     override fun focus(id: Int) = ifAlive { ZaminNative.nativeFocus(it, id) }
 
-    override fun upsertEntity(id: Int, parent: Int, mesh: Int, visible: Boolean, data: FloatArray) =
-        ifAlive { ZaminNative.nativeUpsertEntity(it, id, parent, mesh, visible, data) }
+    override fun upsertEntity(id: Int, parent: Int, mesh: Int, gizmo: Int, visible: Boolean, data: FloatArray) =
+        ifAlive { ZaminNative.nativeUpsertEntity(it, id, parent, mesh, gizmo, visible, data) }
     override fun removeEntity(id: Int) = ifAlive { ZaminNative.nativeRemoveEntity(it, id) }
     override fun setSelected(id: Int) = ifAlive { ZaminNative.nativeSetSelected(it, id) }
     override fun pick(x: Float, y: Float): Int = if (handle == 0L) 0 else ZaminNative.nativePick(handle, x, y)
     override fun dragEntity(id: Int, x0: Float, y0: Float, x1: Float, y1: Float): FloatArray? =
         if (handle == 0L) null else ZaminNative.nativeDragEntity(handle, id, x0, y0, x1, y1)
+    override fun rotateEntity(id: Int, dx: Float, dy: Float): FloatArray? =
+        if (handle == 0L) null else ZaminNative.nativeRotateEntity(handle, id, dx, dy)
+    override fun setPlaying(playing: Boolean) = ifAlive { ZaminNative.nativeSetPlaying(it, playing) }
 
     override fun stats(): EngineStats {
         if (handle == 0L) return EngineStats()

@@ -6,9 +6,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import dev.zamin.editor.project.AssetItem
+import dev.zamin.editor.project.AssetKind
+import dev.zamin.editor.project.ProjectStorage
 
-enum class ObjectType(val label: String) {
-    Scene("Sahna"), Camera("Kamera"), Light("Yorug'lik"), Mesh("Mesh"), Sprite("Sprite"), Empty("Bo'sh"),
+/** Engine'dagi zamin::GizmoKind bilan bir xil tartib: meshsiz obyektlarning viewport belgisi. */
+enum class Gizmo { None, Light, Camera, Empty }
+
+enum class ObjectType(val label: String, val gizmo: Gizmo) {
+    Scene("Sahna", Gizmo.None), Camera("Kamera", Gizmo.Camera), Light("Yorug'lik", Gizmo.Light),
+    Mesh("Mesh", Gizmo.Empty), Sprite("Sprite", Gizmo.Empty), Empty("Bo'sh", Gizmo.Empty),
 }
 
 /** Engine'dagi zamin::MeshKind bilan bir xil tartib (ordinal JNI orqali yuboriladi). */
@@ -64,13 +71,15 @@ class SceneObject(
     var scale by mutableStateOf(scale)
 
     /** Engine'ga yuboriladigan holat (o'zgarganini aniqlash uchun). */
-    fun snapshot() = EntitySnapshot(id, parentId ?: 0, mesh, visible, position, rotation, scale, color)
+    fun snapshot() = EntitySnapshot(id, parentId ?: 0, mesh, type.gizmo, visible, position, rotation, scale, color)
 }
 
 data class EntitySnapshot(
     val id: Int,
     val parent: Int,
     val mesh: MeshKind,
+    /** Mesh bo'lmasa (MeshKind.None) viewport'da shu belgi chiziladi. */
+    val gizmo: Gizmo,
     val visible: Boolean,
     val position: Vec3,
     val rotation: Vec3,
@@ -85,44 +94,51 @@ data class EntitySnapshot(
     )
 }
 
-enum class AssetKind { Folder, Scene, Material, Texture, Mesh, Script, Audio }
+/** Yangi loyihaning standart sahnasi. */
+fun defaultSceneObjects(): List<SceneObject> = listOf(
+    SceneObject(1, "Asosiy sahna", ObjectType.Scene, null),
+    SceneObject(2, "Asosiy kamera", ObjectType.Camera, 1, position = Vec3(0f, 2.2f, 6.5f), rotation = Vec3(12f, 180f, 0f)),
+    SceneObject(3, "Quyosh", ObjectType.Light, 1, position = Vec3(-2.6f, 3.2f, -1.2f), rotation = Vec3(50f, 30f, 0f)),
+    SceneObject(4, "Piramida", ObjectType.Mesh, 1, MeshKind.Pyramid, Color(0xFF3DB98A), Vec3(0f, 0.5f, 0f)),
+    SceneObject(5, "Kub", ObjectType.Mesh, 1, MeshKind.Cube, Color(0xFFF2A33C), Vec3(-1.8f, 0.5f, 0.8f), Vec3(0f, 25f, 0f)),
+    SceneObject(6, "Sfera", ObjectType.Mesh, 1, MeshKind.Sphere, Color(0xFF4D8CF2), Vec3(1.7f, 0.5f, -0.6f)),
+    SceneObject(7, "Yer", ObjectType.Mesh, 1, MeshKind.Plane, Color(0xFF3F4A45), scale = Vec3(10f, 1f, 10f)),
+    SceneObject(8, "O'yinchi", ObjectType.Empty, 1, position = Vec3(1.2f, 0f, 2f)),
+    SceneObject(9, "Qahramon sprite", ObjectType.Sprite, 8, MeshKind.Quad, Color(0xFFE8604C), Vec3(0f, 0.75f, 0f), scale = Vec3(1f, 1.5f, 1f)),
+)
 
-data class AssetItem(val name: String, val kind: AssetKind)
-
-/** Editor UI holati. Sahna obyektlari engine bilan EngineSceneSync orqali sinxronlanadi. */
-class EditorState {
+/**
+ * Editor UI holati. Sahna obyektlari engine bilan EngineSceneSync orqali sinxronlanadi.
+ * project berilsa — assetlar va sahna fayllari shu loyiha papkasidan o'qiladi/yoziladi.
+ */
+class EditorState(val project: ProjectStorage? = null) {
     var tool by mutableStateOf(Tool.Move)
     var is3D by mutableStateOf(true)
     var playState by mutableStateOf(PlayState.Edit)
+        private set
     var selectedId by mutableStateOf<Int?>(4)
-    var projectName by mutableStateOf("Mening o'yinim")
+    var projectName by mutableStateOf(project?.name ?: "Mening o'yinim")
+    /** Ochiq sahna fayli (loyihaga nisbatan yo'l). */
+    var scenePath by mutableStateOf(ProjectStorage.MAIN_SCENE)
+        private set
+    /** Qisqa xabar (saqlandi, xato va h.k.), UI uni bir necha soniya ko'rsatadi. */
+    var message by mutableStateOf<String?>(null)
     /** Har oshganda kamera tanlangan obyektga qaratiladi. */
     var focusRequest by mutableIntStateOf(0)
         private set
 
-    val objects = mutableStateListOf(
-        SceneObject(1, "Asosiy sahna", ObjectType.Scene, null),
-        SceneObject(2, "Asosiy kamera", ObjectType.Camera, 1, position = Vec3(0f, 1.6f, -6f)),
-        SceneObject(3, "Quyosh", ObjectType.Light, 1, position = Vec3(0f, 8f, 0f), rotation = Vec3(50f, -30f, 0f)),
-        SceneObject(4, "Piramida", ObjectType.Mesh, 1, MeshKind.Pyramid, Color(0xFF3DB98A), Vec3(0f, 0.5f, 0f)),
-        SceneObject(5, "Kub", ObjectType.Mesh, 1, MeshKind.Cube, Color(0xFFF2A33C), Vec3(-1.8f, 0.5f, 0.8f), Vec3(0f, 25f, 0f)),
-        SceneObject(6, "Sfera", ObjectType.Mesh, 1, MeshKind.Sphere, Color(0xFF4D8CF2), Vec3(1.7f, 0.5f, -0.6f)),
-        SceneObject(7, "Yer", ObjectType.Mesh, 1, MeshKind.Plane, Color(0xFF3F4A45), scale = Vec3(10f, 1f, 10f)),
-        SceneObject(8, "O'yinchi", ObjectType.Empty, 1, position = Vec3(1.2f, 0f, 2f)),
-        SceneObject(9, "Qahramon sprite", ObjectType.Sprite, 8, MeshKind.Quad, Color(0xFFE8604C), Vec3(0f, 0.75f, 0f), scale = Vec3(1f, 1.5f, 1f)),
-    )
+    val objects = mutableStateListOf<SceneObject>().apply { addAll(defaultSceneObjects()) }
 
-    val assets = listOf(
-        AssetItem("Sahnalar", AssetKind.Folder),
-        AssetItem("Materiallar", AssetKind.Folder),
-        AssetItem("Skriptlar", AssetKind.Folder),
-        AssetItem("Asosiy.scene", AssetKind.Scene),
-        AssetItem("Tosh.mat", AssetKind.Material),
-        AssetItem("Maysa.png", AssetKind.Texture),
-        AssetItem("Daraxt.glb", AssetKind.Mesh),
-        AssetItem("Oyinchi.luau", AssetKind.Script),
-        AssetItem("Fon.ogg", AssetKind.Audio),
-    )
+    // ---- Assetlar ----
+    /** Assetlar panelida ochiq papka ("" — loyiha ildizi). */
+    var assetDir by mutableStateOf("")
+        private set
+    var assets by mutableStateOf<List<AssetItem>>(emptyList())
+        private set
+    /** Platforma fayl tanlagichini ochadi (MainActivity o'rnatadi; testlarda null). */
+    var onImportRequest: (() -> Unit)? = null
+    /** Telefonda ilova ochilganda ochiq turadigan panel (skrinshot testlari uchun). */
+    var initialPhonePanel: PhonePanel? = null
 
     val selected: SceneObject? get() = objects.firstOrNull { it.id == selectedId }
 
@@ -143,18 +159,22 @@ class EditorState {
         return "$base ($i)"
     }
 
+    private val editable get() = playState == PlayState.Edit
+
     fun addObject(kind: CreateKind) {
-        val parent = objects.first { it.type == ObjectType.Scene }.id
+        val parent = objects.firstOrNull { it.type == ObjectType.Scene }?.id
         // 2D rejimda obyektlar XY tekisligida (z = 0), 3D da yer ustida
         val pos = when {
             kind.mesh == MeshKind.Plane -> Vec3(0f, 0f, 0f)
             kind.type == ObjectType.Light -> Vec3(0f, 4f, 0f)
-            kind.type == ObjectType.Camera -> Vec3(0f, 1.6f, -6f)
+            kind.type == ObjectType.Camera -> Vec3(0f, 1.6f, 6f)
             else -> Vec3(0f, 0.5f, 0f)
         }
         val obj = SceneObject(
             nextId++, uniqueName(kind.label.substringBefore(" (")), kind.type, parent,
             kind.mesh, kind.color, pos,
+            // Kamera +Z ga qaraydi: sahnaga qaratish uchun 180° buriladi
+            rotation = if (kind.type == ObjectType.Camera) Vec3(10f, 180f, 0f) else Vec3(0f, 0f, 0f),
             scale = if (kind.mesh == MeshKind.Plane) Vec3(4f, 1f, 4f) else Vec3(1f, 1f, 1f),
         )
         objects.add(obj)
@@ -182,5 +202,104 @@ class EditorState {
         }
         objects.removeAll { it.id in toRemove }
         selectedId = null
+    }
+
+    // ---- Play rejimi ----
+    // O'ynash boshlanganda sahna nusxasi olinadi; to'xtatilganda aynan shu holat qaytariladi,
+    // ya'ni o'yin davomidagi o'zgarishlar sahnani buzmaydi (Unity'dagi kabi).
+    private var editSnapshot: List<ObjectData>? = null
+    private var editSelection: Int? = null
+
+    fun play() {
+        if (playState != PlayState.Edit) return
+        editSnapshot = objects.map { it.toData() }
+        editSelection = selectedId
+        playState = PlayState.Playing
+    }
+
+    fun stop() {
+        if (playState == PlayState.Edit) return
+        editSnapshot?.let { saved -> replaceObjects(saved) }
+        selectedId = editSelection
+        editSnapshot = null
+        playState = PlayState.Edit
+    }
+
+    fun togglePause() {
+        playState = when (playState) {
+            PlayState.Playing -> PlayState.Paused
+            PlayState.Paused -> PlayState.Playing
+            PlayState.Edit -> PlayState.Edit
+        }
+    }
+
+    private fun replaceObjects(data: List<ObjectData>) {
+        objects.clear()
+        objects.addAll(data.map { it.toObject() })
+        nextId = maxOf(100, (data.maxOfOrNull { it.id } ?: 0) + 1)
+    }
+
+    // ---- Loyiha va sahna fayllari ----
+    fun sceneData() = SceneData(scenePath.substringAfterLast('/').removeSuffix(".scene"), is3D, objects.map { it.toData() })
+
+    /** Loyihani ochadi: asosiy sahna bo'lsa yuklanadi, bo'lmasa standart sahna yoziladi. */
+    fun openProject() {
+        val p = project ?: return
+        p.ensureLayout()
+        if (p.exists(ProjectStorage.MAIN_SCENE)) loadScene(ProjectStorage.MAIN_SCENE) else saveScene()
+        refreshAssets()
+    }
+
+    fun saveScene(): Boolean {
+        val p = project ?: return false
+        if (!editable) {
+            message = "O'yin rejimida saqlab bo'lmaydi"
+            return false
+        }
+        val ok = p.writeText(scenePath, SceneFile.encode(sceneData()))
+        message = if (ok) "Saqlandi: ${scenePath.substringAfterLast('/')}" else "Saqlashda xato"
+        refreshAssets()
+        return ok
+    }
+
+    fun loadScene(path: String): Boolean {
+        val p = project ?: return false
+        if (!editable) return false
+        val text = p.readText(path) ?: run { message = "Fayl topilmadi"; return false }
+        val scene = try {
+            SceneFile.decode(text)
+        } catch (e: IllegalArgumentException) {
+            message = "Sahnani o'qib bo'lmadi: ${e.message}"
+            return false
+        }
+        replaceObjects(scene.objects)
+        is3D = scene.is3D
+        scenePath = path
+        selectedId = null
+        message = "Ochildi: ${path.substringAfterLast('/')}"
+        return true
+    }
+
+    fun refreshAssets() {
+        assets = project?.list(assetDir) ?: emptyList()
+    }
+
+    fun openAssetDir(dir: String) {
+        assetDir = dir
+        refreshAssets()
+    }
+
+    /** Assetga teginish: papka — ichiga kirish, sahna — ochish. */
+    fun openAsset(item: AssetItem) {
+        when (item.kind) {
+            AssetKind.Folder -> openAssetDir(item.path)
+            AssetKind.Scene -> loadScene(item.path)
+            else -> {}
+        }
+    }
+
+    fun onImported(path: String?) {
+        message = if (path != null) "Import qilindi: ${path.substringAfterLast('/')}" else "Import muvaffaqiyatsiz"
+        refreshAssets()
     }
 }

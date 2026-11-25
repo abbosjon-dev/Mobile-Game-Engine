@@ -33,6 +33,9 @@ public:
 
     virtual const char* deviceName() const = 0;
 
+    // Oxirgi kadrdagi haqiqiy draw call soni (outline va to'r ham hisoblanadi).
+    virtual uint32_t drawCalls() const = 0;
+
     // Ekransiz chizish (skrinshot/test). RGBA8 piksellar.
     virtual bool renderOffscreen(uint32_t width, uint32_t height, const FrameParams& params,
                                  std::vector<uint8_t>& outRgba) = 0;
